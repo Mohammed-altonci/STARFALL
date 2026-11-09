@@ -1,4 +1,6 @@
 [app]
+p4a.branch = v2024.01.21
+android.ndk = 25b
 title = Starfall
 package.name = starfall
 package.domain = org.starfall
