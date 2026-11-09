@@ -45,7 +45,9 @@ BOSS_EVERY = 10
 TAU = math.tau
 
 # تهيئة pygame والصوت (قناة واحدة mono بتردد 22050 هرتز)
-ANDROID = "ANDROID_ARGUMENT" in os.environ or hasattr(sys, "getandroidapilevel")
+ANDROID = ("ANDROID_ARGUMENT" in os.environ or
+           hasattr(sys, "getandroidapilevel") or
+           sys.platform == "android")
 pygame.mixer.pre_init(22050, -16, 1, 512)
 pygame.init()
 SOUND_ENABLED = True
@@ -64,8 +66,12 @@ except pygame.error:
     SOUND_ENABLED = False
 
 try:
-    # إنشاء النافذة (SCALED يسمح بتكبيرها وبملء الشاشة بمفتاح F11)
-    window = pygame.display.set_mode((WIDTH, HEIGHT), pygame.SCALED | (pygame.FULLSCREEN if ANDROID else 0))
+    # على الهاتف نستخدم دقة الشاشة الحقيقية ثم نمدد اللوحة المنطقية
+    # إلى كامل الشاشة، مع إبقاء الرسومات الأصلية على canvas بدقة 900x700.
+    if ANDROID:
+        window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    else:
+        window = pygame.display.set_mode((WIDTH, HEIGHT), pygame.SCALED)
 except Exception:
     window = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("STARFALL - GALAXY ATTACK")
@@ -4035,7 +4041,8 @@ def shop_buy(i):
 U = SimpleNamespace(state="menu", sel=dict(menu=0, shop=0, settings=0, recharge=0), menu_level=1, page=0, tabs=[], pass_view=1, dmsg="", dmsg_t=0,
                     code="", rmsg="", rmsg_ok=False, rmsg_t=0, recharge_back="menu",
                     confirm=False, rebind=None, msg="", msg_t=0, rects=[], running=True,
-                    shop_back="menu", earned=0, ad_rects=[], ad_pending=False, ad_msg="", dead_ad_used=False, reward_doubled=False)
+                    shop_back="menu", earned=0, ad_rects=[], ad_pending=False, ad_msg="", dead_ad_used=False, reward_doubled=False,
+                    recharge_ad_rect=None, crystal_ad_count=0)
 MENU_ROWS = ["play", "mode", "shop", "recharge", "pass", "daily", "settings", "new", "quit"]
 SET_ROWS = ["sfx", "music", "difficulty", "shake", "bloom", "scan", "autofire", "b_shield", "b_special",
             "b_weapon", "b_pause", "b_bomb", "fullscreen", "back"]
@@ -4241,6 +4248,10 @@ def draw_shop():
     if U.msg_t > 0:
         text(U.msg, F_M, GOLD_LIGHT, WIDTH // 2, 626, center=True)
     text("ARROWS: SELECT   Q / E / TAB: PAGE   ENTER or 1-9: BUY   R: RECHARGE   ESC or B: BACK", F_S, GRAY_L, WIDTH // 2, 668, center=True)
+    if ANDROID:
+        pygame.draw.rect(canvas, (25, 55, 90), TOUCH_BACK_RECT, border_radius=8)
+        pygame.draw.rect(canvas, LIGHT_BLUE, TOUCH_BACK_RECT, 2, border_radius=8)
+        text("BACK", F_M, WHITE, TOUCH_BACK_RECT.centerx, TOUCH_BACK_RECT.centery, center=True)
 
 
 def draw_recharge():
@@ -4258,17 +4269,28 @@ def draw_recharge():
         text(name, F_M, GOLD_LIGHT if sel else WHITE, r.x + 56, r.y + 6)
         text(reward_text(gr)[:34], F_S, GRAY_L, r.x + 56, r.y + 30)
         text(price, F_M, GOLD, r.right - 12, r.y + 14, right=True)
-    text("Arrows: choose product   ENTER (empty box): buy   F1: open store page", F_S, GRAY_L, WIDTH // 2, 420, center=True)
+    # زر إعلان مكافأة: لا يمنح شيئاً إلا بعد تأكيد جسر الإعلانات مشاهدة الإعلان كاملاً.
+    U.recharge_ad_rect = pygame.Rect(230, 410, 440, 42)
+    ad_ready = not U.ad_pending and U.crystal_ad_count < 5
+    pygame.draw.rect(canvas, (10, 48, 38) if ad_ready else (35, 42, 55), U.recharge_ad_rect, border_radius=8)
+    pygame.draw.rect(canvas, GREEN if ad_ready else GRAY, U.recharge_ad_rect, 2, border_radius=8)
+    ad_label = "WATCH AD: +25 NOVA CRYSTALS (%d/5)" % U.crystal_ad_count if ad_ready else ("AD IN PROGRESS..." if U.ad_pending else "SESSION CRYSTAL ADS USED")
+    text(ad_label, F_M, WHITE if ad_ready else GRAY_L, U.recharge_ad_rect.centerx, U.recharge_ad_rect.centery, center=True)
+    text("Arrows: choose product   ENTER (empty box): buy   F1: open store page", F_S, GRAY_L, WIDTH // 2, 465, center=True)
     text("After buying a code, type or paste it below (Ctrl+V) and press ENTER", F_S, GRAY_L, WIDTH // 2, 442, center=True)
-    box = pygame.Rect(150, 468, 600, 50)
+    box = pygame.Rect(150, 500, 600, 50)
     panel(box.x, box.y, box.w, box.h, (210, 150, 255))
     cursor = "_" if (pygame.time.get_ticks() // 400) % 2 == 0 else " "
     text((U.code + cursor) if U.code else "SF-XXXXX-XXXXX-XXXXX-XXXXX", F_L,
          WHITE if U.code else GRAY_D, box.centerx, box.centery, center=True)
     if U.rmsg_t > 0:
-        text(U.rmsg, F_M, GREEN if U.rmsg_ok else RED_LIGHT, WIDTH // 2, 545, center=True)
-    text("Crystals are never earned by playing: they come only from purchases/codes.", F_S, GRAY_L, WIDTH // 2, 590, center=True)
+        text(U.rmsg, F_M, GREEN if U.rmsg_ok else RED_LIGHT, WIDTH // 2, 570, center=True)
+    text("Crystals come from purchases/codes or confirmed rewarded ads.", F_S, GRAY_L, WIDTH // 2, 615, center=True)
     text("ENTER: BUY / REDEEM    CTRL+V: PASTE    BACKSPACE: DELETE    ESC: BACK", F_S, GRAY_L, WIDTH // 2, 668, center=True)
+    if ANDROID:
+        pygame.draw.rect(canvas, (25, 55, 90), TOUCH_BACK_RECT, border_radius=8)
+        pygame.draw.rect(canvas, LIGHT_BLUE, TOUCH_BACK_RECT, 2, border_radius=8)
+        text("BACK", F_M, WHITE, TOUCH_BACK_RECT.centerx, TOUCH_BACK_RECT.centery, center=True)
 
 
 def draw_pass():
@@ -4352,6 +4374,14 @@ def request_rewarded_ad(placement):
     U.ad_msg = "REWARDED ADS ARE NOT CONNECTED YET"
     U.ad_pending = False
     return False
+
+
+def request_crystal_ad():
+    """يطلب إعلاناً مكافئاً يمنح 25 كريستالة بعد تأكيد المشاهدة الكاملة."""
+    if U.crystal_ad_count >= 5:
+        U.ad_msg = "DAILY CRYSTAL ADS USED"
+        return False
+    return request_rewarded_ad("crystal_reward")
 
 def draw_ad_actions():
     """أزرار اختيارية تظهر بعد الخسارة أو إنهاء المرحلة، وتعمل باللمس والفأرة."""
@@ -4687,6 +4717,18 @@ def char_input(ev):
 # دعم الفأرة في القوائم والمتجر
 def mouse_event(ev):
     st = U.state
+    if st in ("shop", "recharge") and ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+        if TOUCH_BACK_RECT.collidepoint(ev.pos):
+            write_save()
+            U.state = U.shop_back if st == "shop" else U.recharge_back
+            sfx("click")
+            return
+    if st == "recharge":
+        if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            if U.recharge_ad_rect and U.recharge_ad_rect.collidepoint(ev.pos):
+                request_crystal_ad()
+                return
+        return
     if st in ("dead", "clear", "win") and ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
         for rect, action in U.ad_rects:
             if rect.collidepoint(ev.pos):
@@ -4750,17 +4792,24 @@ def on_dead():
 
 # ================= التحكم باللمس (أندرويد) =================
 TOUCH = SimpleNamespace(last=None, fingers={})
+TOUCH_BACK_RECT = pygame.Rect(WIDTH - 150, HEIGHT - 58, 130, 42)
 TBTN = [("shield", "SHD", pygame.Rect(WIDTH - 90, HEIGHT - 150, 78, 60)),
         ("special", "SPC", pygame.Rect(WIDTH - 90, HEIGHT - 220, 78, 60)),
         ("bomb", "BMB", pygame.Rect(WIDTH - 90, HEIGHT - 290, 78, 60)),
         ("weapon", "WPN", pygame.Rect(12, HEIGHT - 150, 78, 60)),
-        ("pause", "II", pygame.Rect(12, HEIGHT - 220, 78, 60))]
+        ("pause", "II", pygame.Rect(12, HEIGHT - 220, 78, 60)),
+        ("shop", "SHOP", pygame.Rect(12, HEIGHT - 290, 78, 60))]
+
+TPAUSE = [("resume", "RESUME", pygame.Rect(WIDTH // 2 - 180, 430, 160, 52)),
+          ("shop", "SHOP", pygame.Rect(WIDTH // 2 + 20, 430, 160, 52)),
+          ("settings", "SETTINGS", pygame.Rect(WIDTH // 2 - 180, 500, 160, 52)),
+          ("menu", "MENU", pygame.Rect(WIDTH // 2 + 20, 500, 160, 52))]
 
 def finger_pos(ev):
     ww, wh = pygame.display.get_window_size()
-    sc = min(ww / float(WIDTH), wh / float(HEIGHT))
-    ox, oy = (ww - WIDTH * sc) / 2.0, (wh - HEIGHT * sc) / 2.0
-    return (ev.x * ww - ox) / sc, (ev.y * wh - oy) / sc
+    # في Android نمدد canvas إلى مساحة النافذة كاملة، لذلك لا توجد حواف
+    # letterbox ويصبح التحويل خطياً ومباشراً.
+    return ev.x * ww * WIDTH / float(max(1, ww)), ev.y * wh * HEIGHT / float(max(1, wh))
 
 def touch_event(ev):
     """زر = إجراء، وأي مكان آخر = سحب لتحريك المركبة. خارج اللعب يعمل اللمس كفأرة."""
@@ -4777,11 +4826,29 @@ def touch_event(ev):
                         game.players[0].special(game)
                     elif name == "bomb":
                         game.use_bomb()
+                    elif name == "shop":
+                        U.shop_back = "pause"
+                        U.state = "shop"
                     else:
-                        key_down(save["binds"][name])
+                        key_down(save["binds"].get(name, pygame.K_p))
                     return
             TOUCH.fingers[fid] = "move"
             TOUCH.last = (x, y)
+        elif U.state == "pause":
+            for name, _, r in TPAUSE:
+                if r.collidepoint(x, y):
+                    TOUCH.fingers[fid] = name
+                    if name == "resume":
+                        U.state = "playing"
+                    elif name == "shop":
+                        U.shop_back = "pause"
+                        U.state = "shop"
+                    elif name == "settings":
+                        U.shop_back = "pause"
+                        U.state = "settings"
+                    elif name == "menu":
+                        go_menu()
+                    return
         else:
             pos = (int(x), int(y))
             mouse_event(pygame.event.Event(pygame.MOUSEMOTION, pos=pos))
@@ -4803,6 +4870,13 @@ def draw_touch_buttons():
         pygame.draw.rect(sf, (40, 90, 160, 110), sf.get_rect(), border_radius=14)
         pygame.draw.rect(sf, (120, 200, 255, 200), sf.get_rect(), 2, border_radius=14)
         canvas.blit(sf, r.topleft)
+        text(lab, F_S, WHITE, r.centerx, r.centery, center=True, shadow=False)
+
+
+def draw_pause_touch_buttons():
+    for _, lab, r in TPAUSE:
+        pygame.draw.rect(canvas, (30, 70, 115), r, border_radius=10)
+        pygame.draw.rect(canvas, (120, 200, 255), r, 2, border_radius=10)
         text(lab, F_S, WHITE, r.centerx, r.centery, center=True, shadow=False)
 
 # ================= التشغيل الرئيسي =================
@@ -4901,6 +4975,14 @@ def main():
                         U.ad_msg = "COINS DOUBLED!"
                         write_save()
                         sfx("coin")
+                    elif placement == "crystal_reward" and U.state == "recharge":
+                        save["crystals"] += 25
+                        U.crystal_ad_count += 1
+                        U.rmsg = "25 NOVA CRYSTALS ADDED!"
+                        U.rmsg_ok = True
+                        U.rmsg_t = 240
+                        write_save()
+                        sfx("crystal")
                 else:
                     U.ad_msg = "AD WAS NOT COMPLETED - NO REWARD"
             elif ev.type == pygame.QUIT:
@@ -4932,6 +5014,8 @@ def main():
             text("PAUSED", F_XL, GOLD, WIDTH // 2, 240, center=True)
             text("P / ESC / ENTER: RESUME", F_M, WHITE, WIDTH // 2, 320, center=True)
             text("B: SHOP    O: SETTINGS    M: MAIN MENU (SAVES)", F_M, WHITE, WIDTH // 2, 360, center=True)
+            if ANDROID:
+                draw_pause_touch_buttons()
         elif st == "clear":
             space.update(2.0)
             draw_center_screen("LEVEL %d CLEAR!" % game.level, GREEN,
@@ -4989,7 +5073,13 @@ def main():
             draw_touch_buttons()
         post_fx(canvas)
         window.fill((0, 0, 0))
-        window.blit(canvas, (sx, sy))
+        if ANDROID:
+            # تمديد اللوحة المنطقية إلى كامل شاشة الهاتف بدلاً من ترك أشرطة سوداء.
+            ww, wh = window.get_size()
+            full_frame = pygame.transform.scale(canvas, (ww, wh))
+            window.blit(full_frame, (0, 0))
+        else:
+            window.blit(canvas, (sx, sy))
         pygame.display.flip()
     write_save()
     pygame.quit()
