@@ -36,6 +36,7 @@ import base64
 import webbrowser
 import time
 import datetime
+import importlib
 from types import SimpleNamespace
 
 # ================= التهيئة والإعدادات الأساسية =================
@@ -71,9 +72,12 @@ try:
     if ANDROID:
         window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
     else:
-        window = pygame.display.set_mode((WIDTH, HEIGHT), pygame.SCALED)
+        window = pygame.display.set_mode((WIDTH, HEIGHT), getattr(pygame, "SCALED", 0))
 except Exception:
-    window = pygame.display.set_mode((WIDTH, HEIGHT))
+    try:
+        window = pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN if ANDROID else 0)
+    except Exception:
+        window = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("STARFALL - GALAXY ATTACK")
 # canvas = لوحة الرسم الخلفية: نرسم عليها كل شيء ثم ننسخها للنافذة (هذا يسهّل اهتزاز الشاشة)
 canvas = pygame.Surface((WIDTH, HEIGHT))
@@ -4355,7 +4359,9 @@ def request_rewarded_ad(placement):
     if U.ad_pending:
         return False
     try:
-        import starfall_ads_native
+        # الجسر يضاف فقط في نسخة Android المربوطة بـ AdMob؛ لا ينبغي
+        # أن يمنع غيابه بناء اللعبة أو تشغيلها على الكمبيوتر.
+        starfall_ads_native = importlib.import_module("starfall_ads_native")
         def finished(watched_completely):
             try:
                 pygame.event.post(pygame.event.Event(
@@ -4692,7 +4698,7 @@ def key_down(key):
 def clipboard_text():
     """يقرأ نص الحافظة (للصق كود الشحن) إن توفر tkinter."""
     try:
-        import tkinter
+        tkinter = importlib.import_module("tkinter")
         r = tkinter.Tk()
         r.withdraw()
         t = r.clipboard_get()
