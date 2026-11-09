@@ -51,6 +51,11 @@ ANDROID = ("ANDROID_ARGUMENT" in os.environ or
            sys.platform == "android")
 pygame.mixer.pre_init(22050, -16, 1, 512)
 pygame.init()
+# بعض حزم Android لا تضبط ANDROID_ARGUMENT، لذلك نتحقق أيضاً من مشغل SDL.
+try:
+    ANDROID = ANDROID or pygame.display.get_driver().lower() == "android"
+except Exception:
+    pass
 SOUND_ENABLED = True
 SR, CH = 22050, 1
 try:
@@ -58,19 +63,34 @@ try:
         pygame.mixer.init(22050, -16, 1, 512)
     _mi = pygame.mixer.get_init()
     SR, _fmt, CH = _mi
-    if _fmt != -16:
-        SOUND_ENABLED = False
-    else:
-        pygame.mixer.set_num_channels(32)
-        pygame.mixer.set_reserved(2)
+    # بعض إصدارات SDL على Android تعيد قيمة format مختلفة رغم أن mixer
+    # يعمل بشكل صحيح؛ لذلك نعتمد على وجود mixer بدلاً من رفض الصيغة.
+    SOUND_ENABLED = _mi is not None
+    pygame.mixer.set_num_channels(32)
+    pygame.mixer.set_reserved(2)
 except pygame.error:
-    SOUND_ENABLED = False
+    try:
+        pygame.mixer.quit()
+        pygame.mixer.init()
+        _mi = pygame.mixer.get_init()
+        if _mi:
+            SR, _fmt, CH = _mi
+            SOUND_ENABLED = True
+            pygame.mixer.set_num_channels(32)
+            pygame.mixer.set_reserved(2)
+    except pygame.error:
+        SOUND_ENABLED = False
 
 try:
     # على الهاتف نستخدم دقة الشاشة الحقيقية ثم نمدد اللوحة المنطقية
     # إلى كامل الشاشة، مع إبقاء الرسومات الأصلية على canvas بدقة 900x700.
     if ANDROID:
-        window = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+        # لا نستخدم SCALED هنا؛ بعض نسخ SDL تحافظ معه على نسبة الأبعاد
+        # وتترك حوافاً سوداء. نأخذ مقاس الشاشة الحقيقي ونمدد canvas إليه.
+        info = pygame.display.Info()
+        real_w = max(WIDTH, int(getattr(info, "current_w", 0) or WIDTH))
+        real_h = max(HEIGHT, int(getattr(info, "current_h", 0) or HEIGHT))
+        window = pygame.display.set_mode((real_w, real_h), pygame.FULLSCREEN)
     else:
         window = pygame.display.set_mode((WIDTH, HEIGHT), getattr(pygame, "SCALED", 0))
 except Exception:
@@ -841,6 +861,8 @@ def apply_volumes():
 
 # تشغيل مؤثر صوتي (gap = أقل فاصل بين تكرارين لمنع تراكم الأصوات)
 def sfx(name, gap=30, vol=1.0):
+    if not SOUND_ENABLED or pygame.mixer.get_init() is None:
+        return
     s = S.get(name)
     if isinstance(s, list):
         s = random.choice(s)
@@ -850,9 +872,12 @@ def sfx(name, gap=30, vol=1.0):
     if now - _last_play.get(name, -999) < gap:
         return
     _last_play[name] = now
-    ch = s.play()
-    if ch is not None and vol < 1.0:
-        ch.set_volume(vol)
+    try:
+        ch = s.play()
+        if ch is not None and vol < 1.0:
+            ch.set_volume(vol)
+    except pygame.error:
+        return
 
 def set_engine(flag):
     """تشغيل/إيقاف هدير المحرك أثناء اللعب فقط."""
@@ -872,10 +897,13 @@ def set_music(name):
     if _cur_music[0] == name:
         return
     _cur_music[0] = name
-    MUSIC_CH.stop()
-    if name and MUSIC.get(name):
-        MUSIC_CH.play(MUSIC[name], loops=-1)
-        MUSIC_CH.set_volume(save["music"] / 10.0 * 0.45)
+    try:
+        MUSIC_CH.stop()
+        if name and MUSIC.get(name):
+            MUSIC_CH.play(MUSIC[name], loops=-1)
+            MUSIC_CH.set_volume(save["music"] / 10.0 * 0.45)
+    except pygame.error:
+        return
 
 # ================= تصاميم المركبات والأعداء =================
 # ألوان المركبة الأساسية: الأول للاعب 1 (أحمر) والثاني للاعب 2 (أزرق)
@@ -4232,23 +4260,30 @@ def draw_shop():
         U.rects.append((r, n))
         sel = U.sel["shop"] == n
         status, price, line = shop_info(i)
-        panel(cx, cy, cw, ch, GOLD if sel else (190, 120, 255) if cur == "g" else (60, 80, 130))
+        accent = GOLD if sel else (190, 120, 255) if cur == "g" else (60, 80, 130)
+        panel(cx, cy, cw, ch, accent)
         if sel:
             add_glow(canvas, r.centerx, r.centery, 150, (40, 36, 10))
-        canvas.blit(get_icon(shop_icon_kind(kind), 84), (cx + 8, cy + 24))
+        # أيقونة كبيرة ومحددة لكل عملية شراء: سلاح، سفينة، تطوير، طلاء أو حزمة.
+        icon_size = 92
+        icon_x, icon_y = cx + 7, cy + 20
+        pygame.draw.circle(canvas, (8, 14, 34), (icon_x + icon_size // 2, icon_y + icon_size // 2), 43)
+        pygame.draw.circle(canvas, accent, (icon_x + icon_size // 2, icon_y + icon_size // 2), 43, 2)
+        canvas.blit(get_icon(shop_icon_kind(kind), icon_size), (icon_x, icon_y))
+        pygame.draw.line(canvas, accent, (cx + 98, cy + 12), (cx + 98, cy + ch - 12), 1)
         text("%d" % (n + 1), F_S, GRAY_L, cx + 10, cy + 8)
-        text(name, F_M, GOLD_LIGHT if sel else WHITE, cx + 100, cy + 14)
-        text(desc, F_S, GRAY_L, cx + 100, cy + 42)
+        text(name, F_M, GOLD_LIGHT if sel else WHITE, cx + 110, cy + 14)
+        text(desc, F_S, GRAY_L, cx + 110, cy + 42)
         if line:
-            text(line, F_S, CYAN, cx + 100, cy + 62)
+            text(line, F_S, CYAN, cx + 110, cy + 62)
         if price is not None:
             bal = save["crystals"] if cur == "g" else save["coins"]
             can = bal >= price
-            canvas.blit(get_icon("crystal" if cur == "g" else "coin", 28), (cx + 96, cy + 92))
+            canvas.blit(get_icon("crystal" if cur == "g" else "coin", 28), (cx + 106, cy + 92))
             okcol = (210, 150, 255) if cur == "g" else GOLD
-            text(str(price), F_M, okcol if can else RED_LIGHT, cx + 128, cy + 96)
+            text(str(price), F_M, okcol if can else RED_LIGHT, cx + 138, cy + 96)
         else:
-            text(status, F_S, GREEN if "EQUIP" in status or status == "ACTIVE" else GOLD, cx + 100, cy + 100)
+            text(status, F_S, GREEN if "EQUIP" in status or status == "ACTIVE" else GOLD, cx + 110, cy + 100)
     if U.msg_t > 0:
         text(U.msg, F_M, GOLD_LIGHT, WIDTH // 2, 626, center=True)
     text("ARROWS: SELECT   Q / E / TAB: PAGE   ENTER or 1-9: BUY   R: RECHARGE   ESC or B: BACK", F_S, GRAY_L, WIDTH // 2, 668, center=True)
