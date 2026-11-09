@@ -6,6 +6,7 @@ source.dir = .
 source.include_exts = py
 version = 1.0
 requirements = python3,pygame-ce
+p4a.local_recipes = ./p4a-recipes
 orientation = landscape
 fullscreen = 1
 android.permissions =
