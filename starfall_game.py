@@ -32,6 +32,7 @@ from types import SimpleNamespace
 
 # ================= التهيئة =================
 WIDTH, HEIGHT, FPS = 900, 700, 60
+DESIGN_W = UIW = 900          # عرض الواجهات (قوائم/متجر) ثابت، وعرض اللعب يتسع لشاشة الهاتف
 MAX_LEVEL = 400
 BOSS_EVERY = 10
 TAU = math.tau
@@ -74,6 +75,8 @@ try:
         real_w = max(WIDTH, int(getattr(info, "current_w", 0) or WIDTH))
         real_h = max(HEIGHT, int(getattr(info, "current_h", 0) or HEIGHT))
         window = pygame.display.set_mode((real_w, real_h), pygame.FULLSCREEN)
+        # ساحة اللعب تتسع لنسبة أبعاد الشاشة الحقيقية (حتى 1500 بكسل) فتملأ الهاتف دون تمديد ولا ضباب
+        WIDTH = max(DESIGN_W, min(1500, int(round(HEIGHT * real_w / float(real_h))))) // 2 * 2
     else:
         window = pygame.display.set_mode((WIDTH, HEIGHT), getattr(pygame, "SCALED", 0))
 except Exception:
@@ -83,6 +86,9 @@ except Exception:
         window = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("STARFALL - GALAXY ATTACK")
 canvas = pygame.Surface((WIDTH, HEIGHT))
+WIDE_CANVAS = canvas
+UI_OX = (WIDTH - DESIGN_W) // 2
+ui_canvas = pygame.Surface((DESIGN_W, HEIGHT)) if WIDTH != DESIGN_W else canvas
 clock = pygame.time.Clock()
 
 _FN = "consolas,dejavusansmono,couriernew,monospace"
@@ -2155,6 +2161,8 @@ class Space:
                 self.comets.remove(c)
 
     def draw(self, surf):
+        if surf is ui_canvas and ui_canvas is not WIDE_CANVAS:
+            return
         if self.neb is None:
             surf.fill((4, 5, 12))
         else:
@@ -2984,7 +2992,7 @@ class Boss:
         self.spr = get_boss_sprite(self.design, self.pal_i, self.tier)
         self.r = 84
         mult = DIFF_HP[save["difficulty"]] * BOSS_HP[self.design]
-        self.max = self.hp = (120 + level * 20 * (1 + level / 300.0)) * mult * (0.7 + 0.3 * min(1.0, (level - 1) / 30.0))
+        self.max = self.hp = (100 + level * 14 * (1 + level / 400.0)) * mult * (0.7 + 0.3 * min(1.0, (level - 1) / 30.0))
         self.x, self.y = WIDTH / 2, -200.0
         self.cx, self.amp = WIDTH / 2, WIDTH / 2 - 210
         self.target_y = 170
@@ -3119,7 +3127,7 @@ class Boss:
                 self.st_t -= 1
                 self.vis = max(0, int(255 * self.st_t / 20))
                 if self.st_t <= 0:
-                    self.cx = random.uniform(260, 640)
+                    self.cx = random.uniform(260, WIDTH - 260)
                     self.amp = 100
                     self.y = random.uniform(172, 250)
                     self.state, self.st_t = "appear", 20
@@ -3189,11 +3197,12 @@ class Boss:
         elif pat == "rain":
             g.ebullet(random.uniform(30, WIDTH - 30), -10, math.pi / 2, (5 + random.random() * 2) * sp, "needle", col)
         elif pat == "wall":
-            gap = random.randint(1, 13)
-            for i in range(16):
+            n = max(16, int(WIDTH / 56))
+            gap = random.randint(1, n - 3)
+            for i in range(n):
                 if abs(i - gap) <= 1:
                     continue
-                g.ebullet(30 + i * 56, my + 10, math.pi / 2, 3.0 * sp, "orb", col)
+                g.ebullet(30 + i * (WIDTH - 60) / float(n - 1), my + 10, math.pi / 2, 3.0 * sp, "orb", col)
         sfx("enemy_fire", 80, 0.7)
 
     def draw(self, s, anim):
@@ -3259,7 +3268,7 @@ class Game:
         particles.clear()
         texts.clear()
         self.is_boss = level % BOSS_EVERY == 0
-        self.goal = min(300, 150 + level // 2) if self.is_boss else min(600, 300 + level)
+        self.goal = min(110, 60 + level // 8) if self.is_boss else min(220, 110 + level // 3)
         self.boss_started = False
         self.wave = 1
         self.wave_t = 0
@@ -3541,7 +3550,7 @@ class Game:
                             texts.append([p.x, p.y - 60, "+HEALTH", ICON_COL["health"], 50])
             self.spawn_rocks()
             self.spawn_timer -= 1
-            cap = min(22, 7 + self.level // 8)
+            cap = min(26, 8 + self.level // 8)
             if self.spawn_timer <= 0 and len(self.enemies) < cap:
                 if self.elites < 2 and self.spawned >= self.goal * (self.elites + 1) / 3.0:
                     self.spawn_elite()
@@ -3578,7 +3587,7 @@ class Game:
         explode(e.x, e.y, 0.7 + e.r / 40.0, (60, 110, 190))
         sfx("boom_s" if e.r < 30 else "boom_m" if e.r < 40 else "boom_l", 40)
         self.score += d["score"] * (1 + self.level // 10)
-        c = (1 + self.level // 25 + (1 if e.r > 30 else 0)) if random.random() < 0.35 else 0
+        c = (1 + self.level // 25 + (1 if e.r > 30 else 0)) if random.random() < 0.5 else 0
         if e.elite:
             add_pass_xp(15)
             c = 40 + self.level
@@ -4362,7 +4371,7 @@ MENU_ROWS = ["play", "mode", "shop", "recharge", "pass", "daily", "settings", "n
 SET_ROWS = ["sfx", "music", "difficulty", "shake", "bloom", "scan", "autofire", "b_shield", "b_special",
             "b_weapon", "b_pause", "b_bomb", "fullscreen", "back"]
 DIFF_NAMES = ["EASY", "NORMAL", "HARD"]
-TOUCH_BACK_RECT = pygame.Rect(WIDTH - 150, HEIGHT - 58, 130, 42)
+TOUCH_BACK_RECT = pygame.Rect(UIW - 150, HEIGHT - 58, 130, 42)
 
 
 def panel(x, y, w, h, border=GOLD):
@@ -4452,20 +4461,20 @@ def go_menu():
 def draw_menu():
     space.draw(canvas)
     t = pygame.time.get_ticks() / 1000.0
-    add_glow(canvas, WIDTH // 2, 120, 190, (70, 25, 130))
-    text("STARFALL", F_T, RED_LIGHT, WIDTH // 2, 98, center=True)
-    text("GALAXY ATTACK", F_XL, CYAN, WIDTH // 2, 162, center=True)
-    text("THE LAST FLEET  -  YEAR 2500", F_S, GOLD_LIGHT, WIDTH // 2, 200, center=True)
+    add_glow(canvas, UIW // 2, 120, 190, (70, 25, 130))
+    text("STARFALL", F_T, RED_LIGHT, UIW // 2, 98, center=True)
+    text("GALAXY ATTACK", F_XL, CYAN, UIW // 2, 162, center=True)
+    text("THE LAST FLEET  -  YEAR 2500", F_S, GOLD_LIGHT, UIW // 2, 200, center=True)
     if vip_active():
-        text("VIP ACTIVE - %d DAYS LEFT" % max(1, int((save["vip_until"] - time.time()) // 86400)), F_S, GOLD, WIDTH // 2, 216, center=True)
+        text("VIP ACTIVE - %d DAYS LEFT" % max(1, int((save["vip_until"] - time.time()) // 86400)), F_S, GOLD, UIW // 2, 216, center=True)
     sweep = int((pygame.time.get_ticks() / 12) % HEIGHT)
-    pygame.draw.line(canvas, (40, 90, 140), (0, sweep), (WIDTH, sweep), 1)
+    pygame.draw.line(canvas, (40, 90, 140), (0, sweep), (UIW, sweep), 1)
     ms = get_menu_ship()
     canvas.blit(ms, ms.get_rect(center=(130, int(480 + math.sin(t * 2) * 8))))
-    canvas.blit(MENU_BOSS, MENU_BOSS.get_rect(center=(WIDTH - 130, int(470 + math.sin(t * 1.6) * 8))))
+    canvas.blit(MENU_BOSS, MENU_BOSS.get_rect(center=(UIW - 130, int(470 + math.sin(t * 1.6) * 8))))
     U.rects = []
     for i, row in enumerate(MENU_ROWS):
-        r = pygame.Rect(WIDTH // 2 - 230, 222 + i * 38, 460, 34)
+        r = pygame.Rect(UIW // 2 - 230, 222 + i * 38, 460, 34)
         U.rects.append((r, i))
         if row == "play":
             ml = U.menu_level
@@ -4491,15 +4500,15 @@ def draw_menu():
         else:
             draw_row(r, U.sel["menu"] == i, "QUIT")
     text("REACHED LEVEL %d / %d    HIGH SCORE %d" % (save["level"], MAX_LEVEL, save["high_score"]),
-         F_S, GOLD, WIDTH // 2, 582, center=True)
+         F_S, GOLD, UIW // 2, 582, center=True)
     b = save["binds"]
     if ANDROID:
-        text("TAP LEFT / RIGHT SIDE OF THE LEVEL ROW TO CHANGE LEVEL", F_S, GRAY_L, WIDTH // 2, 640, center=True)
+        text("TAP LEFT / RIGHT SIDE OF THE LEVEL ROW TO CHANGE LEVEL", F_S, GRAY_L, UIW // 2, 640, center=True)
     else:
         text("MOVE ARROWS/WASD   %s SHIELD   %s SPECIAL   %s WEAPON   B SHOP   %s PAUSE" %
              (kname(b["shield"]), kname(b["special"]), kname(b["weapon"]), kname(b["pause"])),
-             F_S, GRAY_L, WIDTH // 2, 640, center=True)
-    text("PROGRESS IS SAVED AUTOMATICALLY", F_S, GRAY_L, WIDTH // 2, 662, center=True)
+             F_S, GRAY_L, UIW // 2, 640, center=True)
+    text("PROGRESS IS SAVED AUTOMATICALLY", F_S, GRAY_L, UIW // 2, 662, center=True)
 
 
 def setting_value(row):
@@ -4557,14 +4566,14 @@ def change_setting(row, d):
 
 def draw_settings():
     space.draw(canvas)
-    text("SETTINGS", F_XL, GOLD, WIDTH // 2, 54, center=True)
+    text("SETTINGS", F_XL, GOLD, UIW // 2, 54, center=True)
     U.rects = []
     for i, row in enumerate(SET_ROWS):
-        r = pygame.Rect(WIDTH // 2 - 300, 100 + i * 36, 600, 32)
+        r = pygame.Rect(UIW // 2 - 300, 100 + i * 36, 600, 32)
         U.rects.append((r, i))
         draw_row(r, U.sel["settings"] == i, SET_LABELS[row], setting_value(row))
     hint = "TAP LEFT / RIGHT HALF OF A ROW TO CHANGE" if ANDROID else "LEFT / RIGHT TO CHANGE   ENTER TO SELECT   ESC TO GO BACK"
-    text(hint, F_S, GRAY_L, WIDTH // 2, 672, center=True)
+    text(hint, F_S, GRAY_L, UIW // 2, 672, center=True)
 
 
 def move_shop_sel(d):
@@ -4583,15 +4592,15 @@ def move_shop_sel(d):
 def draw_shop():
     """المتجر: 8 تبويبات، بطاقات 3 في كل صف (3 صفوف ظاهرة) مع تمرير."""
     space.draw(canvas)
-    text("STARFALL SHOP", F_XL, GOLD, WIDTH // 2, 36, center=True)
+    text("STARFALL SHOP", F_XL, GOLD, UIW // 2, 36, center=True)
     canvas.blit(get_icon("coin", 32), (40, 62))
     text("COINS %d" % save["coins"], F_M, GOLD, 78, 68)
-    canvas.blit(get_icon("crystal", 32), (WIDTH - 262, 62))
-    text("CRYSTALS %d" % save["crystals"], F_M, (210, 150, 255), WIDTH - 224, 68)
+    canvas.blit(get_icon("crystal", 32), (UIW - 262, 62))
+    text("CRYSTALS %d" % save["crystals"], F_M, (210, 150, 255), UIW - 224, 68)
     text("WEAPON: %s LV %d     SHIP: %s" % (save["equipped"].upper(), save["power"], SHIP_DEFS[save["ship"]]["name"]),
          F_S, CYAN, 40, 100)
     if not ANDROID:
-        text("[R] RECHARGE CRYSTALS", F_S, (210, 150, 255), WIDTH - 40, 100, right=True)
+        text("[R] RECHARGE CRYSTALS", F_S, (210, 150, 255), UIW - 40, 100, right=True)
     U.rects = []
     U.tabs = []
     for pi, name in enumerate(SHOP_PAGES):
@@ -4667,11 +4676,11 @@ def draw_shop():
                 pygame.draw.polygon(canvas, CYAN, [(cx2, cy2 + 8), (cx2 - 9, cy2 - 6), (cx2 + 9, cy2 - 6)])
         text("MORE ITEMS  %d/%d" % (U.sel["shop"] + 1, n_items), F_S, GRAY_L, 138, 637)
     if U.msg_t > 0 and U.msg:
-        text(U.msg, F_M, GOLD_LIGHT, WIDTH // 2, 612, center=True)
+        text(U.msg, F_M, GOLD_LIGHT, UIW // 2, 612, center=True)
     if ANDROID:
-        text("TAP A CARD TO SELECT - TAP AGAIN TO BUY - DRAG TO SCROLL", F_S, GRAY_L, WIDTH // 2, 676, center=True)
+        text("TAP A CARD TO SELECT - TAP AGAIN TO BUY - DRAG TO SCROLL", F_S, GRAY_L, UIW // 2, 676, center=True)
     else:
-        text("ARROWS: SELECT   Q / E / TAB: PAGE   ENTER or 1-9: BUY   R: RECHARGE   ESC or B: BACK", F_S, GRAY_L, WIDTH // 2, 676, center=True)
+        text("ARROWS: SELECT   Q / E / TAB: PAGE   ENTER or 1-9: BUY   R: RECHARGE   ESC or B: BACK", F_S, GRAY_L, UIW // 2, 676, center=True)
     draw_back_btn()
 
 
@@ -4692,9 +4701,9 @@ def recharge_submit():
 
 def draw_recharge():
     space.draw(canvas)
-    text("STORE  -  RECHARGE", F_XL, (210, 150, 255), WIDTH // 2, 40, center=True)
-    canvas.blit(get_icon("crystal", 32), (WIDTH // 2 - 120, 74))
-    text("BALANCE: %d" % save["crystals"], F_M, WHITE, WIDTH // 2 - 80, 80)
+    text("STORE  -  RECHARGE", F_XL, (210, 150, 255), UIW // 2, 40, center=True)
+    canvas.blit(get_icon("crystal", 32), (UIW // 2 - 120, 74))
+    text("BALANCE: %d" % save["crystals"], F_M, WHITE, UIW // 2 - 80, 80)
     U.rects = []
     for i, sku in enumerate(CODE_SKUS):
         name, price, gr = PRODUCTS[sku]
@@ -4713,7 +4722,7 @@ def draw_recharge():
     pygame.draw.rect(canvas, GREEN if ad_ready else GRAY, U.recharge_ad_rect, 2, border_radius=8)
     ad_label = "WATCH AD: +%d CRYSTALS (%d LEFT TODAY)" % (AD_CRYSTALS, left) if ad_ready else ("AD IN PROGRESS..." if U.ad_pending else "DAILY ADS USED - COME BACK TOMORROW")
     text(ad_label, F_M, WHITE if ad_ready else GRAY_L, U.recharge_ad_rect.centerx, U.recharge_ad_rect.centery, center=True)
-    text("After buying a code, type it below and tap REDEEM", F_S, GRAY_L, WIDTH // 2, 472, center=True)
+    text("After buying a code, type it below and tap REDEEM", F_S, GRAY_L, UIW // 2, 472, center=True)
     box = pygame.Rect(60, 492, 560, 50)
     U.code_rect = box
     panel(box.x, box.y, box.w, box.h, (210, 150, 255))
@@ -4723,12 +4732,12 @@ def draw_recharge():
     U.redeem_rect = pygame.Rect(640, 492, 200, 50)
     draw_btn(U.redeem_rect, "REDEEM CODE", GREEN)
     if U.rmsg_t > 0:
-        text(U.rmsg, F_M, GREEN if U.rmsg_ok else RED_LIGHT, WIDTH // 2, 570, center=True)
+        text(U.rmsg, F_M, GREEN if U.rmsg_ok else RED_LIGHT, UIW // 2, 570, center=True)
     if U.ad_msg:
-        text(U.ad_msg, F_S, GOLD_LIGHT, WIDTH // 2, 598, center=True)
-    text("Crystals come from purchases/codes or confirmed rewarded ads.", F_S, GRAY_L, WIDTH // 2, 622, center=True)
+        text(U.ad_msg, F_S, GOLD_LIGHT, UIW // 2, 598, center=True)
+    text("Crystals come from purchases/codes or confirmed rewarded ads.", F_S, GRAY_L, UIW // 2, 622, center=True)
     if not ANDROID:
-        text("ENTER: BUY / REDEEM    CTRL+V: PASTE    BACKSPACE: DELETE    F1: STORE PAGE    ESC: BACK", F_S, GRAY_L, WIDTH // 2, 676, center=True)
+        text("ENTER: BUY / REDEEM    CTRL+V: PASTE    BACKSPACE: DELETE    F1: STORE PAGE    ESC: BACK", F_S, GRAY_L, UIW // 2, 676, center=True)
     draw_back_btn()
 
 
@@ -4753,13 +4762,13 @@ def pass_do(a):
 def draw_pass():
     space.draw(canvas)
     tier = pass_tier()
-    text("STARFALL PASS", F_XL, GOLD, WIDTH // 2, 40, center=True)
-    text("TIER %d / %d      XP %d" % (tier, PASS_TIERS, save["pass_xp"]), F_M, WHITE, WIDTH // 2, 84, center=True)
-    pygame.draw.rect(canvas, (20, 30, 60), (WIDTH // 2 - 200, 104, 400, 10))
+    text("STARFALL PASS", F_XL, GOLD, UIW // 2, 40, center=True)
+    text("TIER %d / %d      XP %d" % (tier, PASS_TIERS, save["pass_xp"]), F_M, WHITE, UIW // 2, 84, center=True)
+    pygame.draw.rect(canvas, (20, 30, 60), (UIW // 2 - 200, 104, 400, 10))
     frac = 1.0 if tier >= PASS_TIERS else (save["pass_xp"] % PASS_XP_PER_TIER) / float(PASS_XP_PER_TIER)
-    pygame.draw.rect(canvas, CYAN, (WIDTH // 2 - 200, 104, int(400 * frac), 10))
+    pygame.draw.rect(canvas, CYAN, (UIW // 2 - 200, 104, int(400 * frac), 10))
     text("PREMIUM TRACK: UNLOCKED" if save["pass_prem"] else "PREMIUM TRACK LOCKED  -  unlock in SHOP > CHARGE",
-         F_S, (210, 150, 255) if save["pass_prem"] else RED_LIGHT, WIDTH // 2, 126, center=True)
+         F_S, (210, 150, 255) if save["pass_prem"] else RED_LIGHT, UIW // 2, 126, center=True)
     for n in range(8):
         t = U.pass_view + n
         if t > PASS_TIERS:
@@ -4778,13 +4787,13 @@ def draw_pass():
     draw_btn(U.btns[2][0], "CLAIM ALL", GREEN)
     draw_btn(U.btns[3][0], "GET PREMIUM", (210, 150, 255))
     if U.dmsg_t > 0:
-        text(U.dmsg, F_M, GOLD_LIGHT, WIDTH // 2, 660, center=True)
+        text(U.dmsg, F_M, GOLD_LIGHT, UIW // 2, 660, center=True)
     draw_back_btn()
 
 
 def draw_daily():
     space.draw(canvas)
-    text("DAILY REWARD", F_XL, GOLD, WIDTH // 2, 54, center=True)
+    text("DAILY REWARD", F_XL, GOLD, UIW // 2, 54, center=True)
     day, ok = daily_state()
     for i, gr in enumerate(DAILY_REWARDS):
         r = pygame.Rect(40 + (i % 4) * 210, 130 + (i // 4) * 170, 190, 150)
@@ -4796,15 +4805,15 @@ def draw_daily():
         if here:
             text("READY!", F_M, GREEN, r.centerx, r.bottom - 22, center=True)
     if vip_active():
-        text("VIP BONUS: +25 CRYSTALS EVERY DAY", F_M, GOLD, WIDTH // 2, 480, center=True)
+        text("VIP BONUS: +25 CRYSTALS EVERY DAY", F_M, GOLD, UIW // 2, 480, center=True)
     else:
-        text("Tip: VIP members get +25 crystals every day and +50% coins", F_S, GRAY_L, WIDTH // 2, 480, center=True)
-    U.btns = [(pygame.Rect(WIDTH // 2 - 110, 505, 220, 46), "daily")]
+        text("Tip: VIP members get +25 crystals every day and +50% coins", F_S, GRAY_L, UIW // 2, 480, center=True)
+    U.btns = [(pygame.Rect(UIW // 2 - 110, 505, 220, 46), "daily")]
     draw_btn(U.btns[0][0], "CLAIM TODAY", GREEN, ok)
     if U.dmsg_t > 0:
-        text(U.dmsg, F_M, GOLD_LIGHT, WIDTH // 2, 580, center=True)
+        text(U.dmsg, F_M, GOLD_LIGHT, UIW // 2, 580, center=True)
     if not ANDROID:
-        text("ENTER: CLAIM TODAY'S REWARD    ESC: BACK", F_S, GRAY_L, WIDTH // 2, 676, center=True)
+        text("ENTER: CLAIM TODAY'S REWARD    ESC: BACK", F_S, GRAY_L, UIW // 2, 676, center=True)
     draw_back_btn()
 
 
@@ -4856,8 +4865,8 @@ def draw_ad_actions():
     if U.state not in ("dead", "clear", "win"):
         return
     y = 555
-    left = pygame.Rect(105, y, 330, 58)
-    right = pygame.Rect(465, y, 330, 58)
+    left = pygame.Rect(WIDTH // 2 - 345, y, 330, 58)
+    right = pygame.Rect(WIDTH // 2 + 15, y, 330, 58)
     if U.state == "dead":
         enabled = not U.dead_ad_used and not U.ad_pending
         label = "WATCH AD: CONTINUE" if enabled else ("AD IN PROGRESS..." if U.ad_pending else "CONTINUE AD USED")
@@ -5269,7 +5278,7 @@ def on_level_clear():
     U.ad_msg = ""
     lvl = game.level
     add_pass_xp(50)
-    bonus = 60 + lvl * 3
+    bonus = 120 + lvl * 6
     bonus = add_coins(bonus)
     game.earned += bonus
     game.score += lvl * 50
@@ -5315,6 +5324,8 @@ def finger_pos(ev):
 def touch_event(ev):
     fid = ev.finger_id
     x, y = finger_pos(ev)
+    if U.state in UI_DRAW:
+        x -= UI_OX
     if ev.type == pygame.FINGERDOWN:
         if U.state == "playing":
             for name, _, r in TBTN:
@@ -5463,6 +5474,26 @@ def init_assets():
     set_music("menu")
 
 
+UI_DRAW = dict(menu=draw_menu, settings=draw_settings, shop=draw_shop,
+               recharge=draw_recharge, **{"pass": draw_pass}, daily=draw_daily)
+
+
+def draw_ui_state(fn):
+    """الواجهات تُرسم بعرض 900 ثابت (نصوص وأيقونات بحجمها الأصلي) وتوضع في منتصف الساحة العريضة."""
+    global canvas
+    if ui_canvas is WIDE_CANVAS:
+        fn()
+        return
+    space.draw(WIDE_CANVAS)
+    ui_canvas.blit(WIDE_CANVAS, (-UI_OX, 0))
+    canvas = ui_canvas
+    try:
+        fn()
+    finally:
+        canvas = WIDE_CANVAS
+    WIDE_CANVAS.blit(ui_canvas, (UI_OX, 0))
+
+
 def handle_ad_result(ev):
     U.ad_pending = False
     U.ad_test = None
@@ -5573,24 +5604,9 @@ def main():
                                 ("FINAL SCORE: %d" % game.score, GOLD_LIGHT)],
                                "" if ANDROID else "ENTER: MAIN MENU")
             draw_ad_actions()
-        elif st == "menu":
+        elif st in UI_DRAW:
             space.update(1.0)
-            draw_menu()
-        elif st == "settings":
-            space.update(1.0)
-            draw_settings()
-        elif st == "shop":
-            space.update(1.0)
-            draw_shop()
-        elif st == "recharge":
-            space.update(1.0)
-            draw_recharge()
-        elif st == "pass":
-            space.update(1.0)
-            draw_pass()
-        elif st == "daily":
-            space.update(1.0)
-            draw_daily()
+            draw_ui_state(UI_DRAW[st])
         if U.rmsg_t > 0:
             U.rmsg_t -= 1
         if U.dmsg_t > 0:
