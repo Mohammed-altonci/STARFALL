@@ -2,26 +2,17 @@
 """
 STARFALL - GALAXY ATTACK   (ستارفول: هجوم المجرة)
 =================================================
-لعبة فضائية بلغة بايثون + مكتبة pygame. كل شيء فيها مرسوم ومولّد بالكود:
-لا صور ولا ملفات صوت خارجية.   التشغيل:  pip install pygame   ثم   python starfall.py
+لعبة فضائية بلغة بايثون + pygame. كل شيء مرسوم ومولّد بالكود (لا صور ولا ملفات صوت).
+التشغيل على الكمبيوتر:  pip install pygame   ثم   python starfall_game.py
 
-المزايا:
-- 400 مرحلة طويلة (5 موجات + أعداء نخبة + كويكبات)، وكل 10 مراحل زعيم، و8 تصاميم زعماء بقدرات خاصة.
-- 6 مركبات (منها مركبتان مميزتان) و10 أسلحة وطائرات مرافقة ومظاهر وألوان أثر المحرك.
-- رسومات عام 2500: توهج Bloom وخطوط مسح وواجهة هولوغرامية وخلفية معركة بعيدة وصواعق أيونية.
-- متجر من 7 صفحات و52 عنصراً: عملات عادية + كريستال نوفا (عملة مميزة تُشحن فقط).
-- نظام مبيعات: حزم كريستال، حزمة مبتدئين، اشتراك VIP، تذكرة ستارفول (Battle Pass)، مكافأة يومية.
-- حفظ تلقائي، لاعبان على نفس الجهاز، إعدادات الصوت والصعوبة وتغيير المفاتيح.
+ما الجديد في هذه النسخة:
+- إصلاح انهيار المتجر (NameError: LIGHT_BLUE).
+- عرض الهاتف: نسبة أبعاد صحيحة بلا تمديد، والجوانب تُملأ بخلفية فضائية ضبابية بدل الأسود.
+- 17 سلاحاً و8 مركبات و11 مظهراً و9 ألوان أثر و12 ترقية و8 صفحات في المتجر.
+- صفحة CHARGE في المتجر: إعلانات مكافأة (+25 كريستال، 5 يومياً) وحزم الشحن وكود الشحن.
+- المتجر يدعم التمرير (أزرار ▲▼ أو سحب الإصبع) والضغط مرتين للشراء على الهاتف.
 
-للنشر والربح: انظر PURCHASE_MODE و PLAY_BILLING_HOOK و PRODUCTS قرب بداية الملف،
-وأداة المالك starfall_codegen.py (لا توزعها مع اللعبة) لتوليد أكواد الشحن.
-
-التحكم (بعضها يمكن تغييره من الإعدادات):
-  الحركة: الأسهم أو WASD     الدرع: Left Shift     السلاح الخاص: E     تبديل السلاح: Q
-  القنبلة: X     المتجر: B     إيقاف مؤقت: P أو ESC     ملء الشاشة: F11
-  لاعبان: اللاعب 1 = WASD ، اللاعب 2 = الأسهم + Right Shift + Right Ctrl
-  الإطلاق تلقائي (يمكن إيقافه من الإعدادات، ثم المسافة / Enter)
-  في المتجر: الأسهم للتنقل، Q و E أو TAB لتبديل الصفحة، Enter أو الأرقام 1-9 للشراء
+للنشر والربح: انظر PURCHASE_MODE و PLAY_BILLING_HOOK و PRODUCTS و ADS_TEST_MODE.
 """
 import pygame
 import random
@@ -39,19 +30,17 @@ import datetime
 import importlib
 from types import SimpleNamespace
 
-# ================= التهيئة والإعدادات الأساسية =================
+# ================= التهيئة =================
 WIDTH, HEIGHT, FPS = 900, 700, 60
 MAX_LEVEL = 400
 BOSS_EVERY = 10
 TAU = math.tau
 
-# تهيئة pygame والصوت (قناة واحدة mono بتردد 22050 هرتز)
 ANDROID = ("ANDROID_ARGUMENT" in os.environ or
            hasattr(sys, "getandroidapilevel") or
            sys.platform == "android")
 pygame.mixer.pre_init(22050, -16, 1, 512)
 pygame.init()
-# بعض حزم Android لا تضبط ANDROID_ARGUMENT، لذلك نتحقق أيضاً من مشغل SDL.
 try:
     ANDROID = ANDROID or pygame.display.get_driver().lower() == "android"
 except Exception:
@@ -63,8 +52,6 @@ try:
         pygame.mixer.init(22050, -16, 1, 512)
     _mi = pygame.mixer.get_init()
     SR, _fmt, CH = _mi
-    # بعض إصدارات SDL على Android تعيد قيمة format مختلفة رغم أن mixer
-    # يعمل بشكل صحيح؛ لذلك نعتمد على وجود mixer بدلاً من رفض الصيغة.
     SOUND_ENABLED = _mi is not None
     pygame.mixer.set_num_channels(32)
     pygame.mixer.set_reserved(2)
@@ -82,11 +69,7 @@ except pygame.error:
         SOUND_ENABLED = False
 
 try:
-    # على الهاتف نستخدم دقة الشاشة الحقيقية ثم نمدد اللوحة المنطقية
-    # إلى كامل الشاشة، مع إبقاء الرسومات الأصلية على canvas بدقة 900x700.
     if ANDROID:
-        # لا نستخدم SCALED هنا؛ بعض نسخ SDL تحافظ معه على نسبة الأبعاد
-        # وتترك حوافاً سوداء. نأخذ مقاس الشاشة الحقيقي ونمدد canvas إليه.
         info = pygame.display.Info()
         real_w = max(WIDTH, int(getattr(info, "current_w", 0) or WIDTH))
         real_h = max(HEIGHT, int(getattr(info, "current_h", 0) or HEIGHT))
@@ -99,11 +82,9 @@ except Exception:
     except Exception:
         window = pygame.display.set_mode((WIDTH, HEIGHT))
 pygame.display.set_caption("STARFALL - GALAXY ATTACK")
-# canvas = لوحة الرسم الخلفية: نرسم عليها كل شيء ثم ننسخها للنافذة (هذا يسهّل اهتزاز الشاشة)
 canvas = pygame.Surface((WIDTH, HEIGHT))
 clock = pygame.time.Clock()
 
-# الخطوط المستخدمة في الواجهة (أول خط متوفر في جهازك)
 _FN = "consolas,dejavusansmono,couriernew,monospace"
 F_S = pygame.font.SysFont(_FN, 14, bold=True)
 F_M = pygame.font.SysFont(_FN, 20, bold=True)
@@ -119,6 +100,7 @@ RED_LIGHT = (255, 95, 115)
 RED_DARK = (90, 15, 30)
 BLUE = (30, 100, 210)
 BLUE_LIGHT = (80, 210, 255)
+LIGHT_BLUE = BLUE_LIGHT          # كان هذا الاسم ناقصاً وسبب انهيار المتجر
 BLUE_DARK = (10, 35, 95)
 GOLD = (255, 185, 45)
 GOLD_LIGHT = (255, 235, 150)
@@ -133,7 +115,7 @@ GRAY_L = (200, 208, 220)
 NAVY = (14, 22, 52)
 FIRE_COLS = [(255, 120, 30), (255, 190, 60), (255, 80, 40), (255, 230, 140)]
 
-# ================= نظام الحفظ (يحفظ تقدمك تلقائياً) =================
+# ================= الحفظ =================
 try:
     _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 except NameError:
@@ -148,11 +130,11 @@ SAVE_FILE = os.path.join(_BASE_DIR, "starfall_save.json")
 DEFAULT_BINDS = dict(shield=pygame.K_LSHIFT, special=pygame.K_e,
                      weapon=pygame.K_q, pause=pygame.K_p, bomb=pygame.K_x)
 
-# يحصر القيمة بين حد أدنى وحد أعلى
+
 def clamp(v, lo, hi):
     return lo if v < lo else hi if v > hi else v
 
-# القيم الافتراضية للحفظ: التقدم، العملات، الترقيات، المركبات، الإعدادات
+
 def default_save():
     return dict(high_score=0, score=0, level=1, coins=0,
                 weapons=["laser"], equipped="laser", power=1,
@@ -161,15 +143,16 @@ def default_save():
                 autofire=True, two_players=False,
                 ship="vanguard", ships=["vanguard"], speed_lv=0, regen_lv=0,
                 coin_lv=0, luck_lv=0, firerate_lv=0, spower_lv=0,
+                magnet_lv=0, crit_lv=0, slayer_lv=0, xp_lv=0,
                 drones=0, revives=0, bombs=0,
                 crystals=0, used_codes=[], aegis=0, coin2=False, drone2=False,
                 skins=["classic"], skin="classic", trails=["cyan"], trail="cyan",
                 bloom=True, scan=True,
                 vip_until=0, daily_last=0, daily_day=0, pass_xp=0, pass_prem=False,
-                pass_free=[], pass_paid=[], purchases=[],
+                pass_free=[], pass_paid=[], purchases=[], ad_date=0, ad_count=0,
                 binds=dict(DEFAULT_BINDS))
 
-# تحميل الحفظ من الملف مع التحقق من كل قيمة حتى لا يفسد الملف اللعبة
+
 def load_save():
     base = default_save()
     try:
@@ -193,7 +176,8 @@ def load_save():
         base["music"] = clamp(int(base["music"]), 0, 10)
         for k, hi in (("speed_lv", 5), ("regen_lv", 5), ("coin_lv", 10), ("luck_lv", 10),
                       ("firerate_lv", 10), ("spower_lv", 10), ("drones", 3),
-                      ("revives", 9), ("bombs", 9)):
+                      ("revives", 9), ("bombs", 9), ("magnet_lv", 5), ("crit_lv", 10),
+                      ("slayer_lv", 10), ("xp_lv", 5)):
             base[k] = clamp(int(base[k]), 0, hi)
         if "vanguard" not in base["ships"]:
             base["ships"].append("vanguard")
@@ -203,7 +187,7 @@ def load_save():
         base["aegis"] = clamp(int(base["aegis"]), 0, 4)
         base["coin2"] = bool(base["coin2"])
         base["drone2"] = bool(base["drone2"])
-        for key in ("vip_until", "daily_last", "daily_day", "pass_xp"):
+        for key in ("vip_until", "daily_last", "daily_day", "pass_xp", "ad_date", "ad_count"):
             base[key] = max(0, int(base[key]))
         base["pass_prem"] = bool(base["pass_prem"])
         for key in ("pass_free", "pass_paid", "purchases"):
@@ -230,7 +214,7 @@ def load_save():
         return default_save()
     return base
 
-# كتابة الحفظ بأمان (عبر ملف مؤقت ثم استبدال)
+
 def write_save():
     try:
         tmp = SAVE_FILE + ".tmp"
@@ -240,40 +224,31 @@ def write_save():
     except Exception:
         pass
 
+
 save = load_save()
 
+
 def vip_active():
-    """هل اشتراك VIP فعّال الآن؟"""
     return time.time() < save["vip_until"]
 
 
 def add_coins(n):
-    """يضيف عملات للاعب مع مكافأة المتجر (كل مستوى = +10%) ويعيد العدد الفعلي."""
     n = int(round(n * (1 + 0.1 * save["coin_lv"]) * (2 if save["coin2"] else 1) * (1.5 if vip_active() else 1.0)))
     save["coins"] += n
     return n
 
 
-# ================= نظام الشحن: العملة المميزة (كريستال نوفا) =================
-# الكريستال لا يُكسب من اللعب، بل يُشحن بكود شحن. الكود يُولَّد بملف starfall_codegen.py (للمالك فقط)
-# تنبيه أمني: بما أن اللعبة كود مفتوح فيمكن استخراج المفتاح السري. لحماية حقيقية للأرباح
-# استعمل خادماً يتحقق من الأكواد، أو حوّل اللعبة إلى برنامج تنفيذي (PyInstaller/Nuitka).
-RECHARGE_SECRET = b"CHANGE-THIS-SECRET-BEFORE-RELEASE"   # غيّره هنا وفي starfall_codegen.py بنفس القيمة
-STORE_URL = "https://example.com/starfall-store"        # رابط متجرك الذي تبيع فيه الأكواد
-RECHARGE_TIERS = [100, 300, 700, 1500, 4000, 10000]     # كمية الكريستال لكل فئة كود
-RECHARGE_PRICES = ["$0.99", "$2.99", "$6.99", "$14.99", "$34.99", "$79.99"]  # للعرض فقط
-
-# ---------- نظام المبيعات (للربح) ----------
-# PURCHASE_MODE = "codes": الدفع خارج اللعبة (موقعك/itch.io/Steam) ثم يدخل اللاعب كوداً.
-# PURCHASE_MODE = "play" : الدفع عبر Google Play Billing. ضع في PLAY_BILLING_HOOK دالة (sku, callback)
-#   تبدأ عملية الشراء في Google Play وتستدعي callback(purchase_token) بعد نجاحها (يجب التحقق من الإيصال في خادمك).
-# مهم: متجر Google Play يُلزم باستعمال Play Billing لبيع العناصر الرقمية داخل التطبيق.
-PURCHASE_MODE = "codes"
+# ================= الشحن والمبيعات =================
+RECHARGE_SECRET = b"CHANGE-THIS-SECRET-BEFORE-RELEASE"
+STORE_URL = "https://example.com/starfall-store"
+PURCHASE_MODE = "codes"          # "codes" أو "play"
 PLAY_BILLING_HOOK = None
-# فئات الأكواد بالترتيب (رقم الفئة داخل الكود = موضع المنتج هنا)
+ADS_TEST_MODE = False            # True = يحاكي إعلاناً مدته 3 ثوانٍ للتجربة فقط (لا تنشر اللعبة بها!)
+AD_CRYSTALS = 25                 # كريستال لكل إعلان
+AD_DAILY_MAX = 5                 # أقصى عدد إعلانات يومياً
+
 CODE_SKUS = ["crystals_100", "crystals_300", "crystals_700", "crystals_1500", "crystals_4000", "crystals_10000",
              "starter_pack", "vip_30d", "battle_pass", "mega_pack"]
-# كتالوج المنتجات: المعرّف -> (الاسم, السعر للعرض, ما يُمنح). اجعل المعرّفات مطابقة لـ Play Console
 PRODUCTS = {
     "crystals_100": ("100 Crystals", "$0.99", dict(crystals=100)),
     "crystals_300": ("300 Crystals", "$2.99", dict(crystals=300)),
@@ -293,7 +268,6 @@ def _b32(b):
 
 
 def make_code(tier, rid=None):
-    """يصنع كود شحن: [الفئة 1 بايت + رقم عشوائي 5 بايت + توقيع HMAC 6 بايت]."""
     rid = rid if rid is not None else os.urandom(5)
     payload = bytes([tier]) + rid
     mac = hmac.new(RECHARGE_SECRET, payload, hashlib.sha256).digest()[:6]
@@ -302,7 +276,6 @@ def make_code(tier, rid=None):
 
 
 def parse_code(code):
-    """يتحقق من توقيع الكود ويعيد (الفئة, المعرّف) أو None إن كان مزيفاً."""
     s = code.upper().replace(" ", "")
     if s.startswith("SF-"):
         s = s[3:]
@@ -321,7 +294,6 @@ def parse_code(code):
 
 
 def apply_grants(gr):
-    """يطبّق مكافآت (عملات، كريستال، عناصر، VIP...) على الحفظ. يُستعمل للمنتجات والحزم والمكافآت."""
     save["coins"] += gr.get("coins", 0)
     save["crystals"] += gr.get("crystals", 0)
     save["revives"] = min(9, save["revives"] + gr.get("revives", 0))
@@ -343,7 +315,6 @@ def apply_grants(gr):
 
 
 def grant_product(sku, token):
-    """يمنح منتجاً اشتراه اللاعب (إيصال واحد لا يُعالج مرتين). يعيد رسالة."""
     if sku not in PRODUCTS:
         return "UNKNOWN PRODUCT"
     name, _, gr = PRODUCTS[sku]
@@ -360,15 +331,13 @@ def grant_product(sku, token):
 
 
 def request_purchase(sku):
-    """زر الشراء: عبر Google Play إن فُعّل، وإلا يطلب كود شحن."""
     if PURCHASE_MODE == "play" and PLAY_BILLING_HOOK:
         PLAY_BILLING_HOOK(sku, lambda token: grant_product(sku, token))
         return "OPENING GOOGLE PLAY..."
-    return "BUY A CODE IN THE STORE (F1), THEN TYPE IT"
+    return "GET THE CODE FROM THE STORE, THEN TAP REDEEM CODE"
 
 
 def redeem_code(code):
-    """يستبدل كود شحن (مرة واحدة لكل كود). يعيد (نجاح, رسالة)."""
     r = parse_code(code)
     if r is None:
         return False, "INVALID CODE"
@@ -384,7 +353,6 @@ def redeem_code(code):
 
 
 def reward_text(gr):
-    """وصف مختصر للمكافأة."""
     parts = []
     if gr.get("coins"):
         parts.append("%d COINS" % gr["coins"])
@@ -403,13 +371,25 @@ def reward_text(gr):
     return " + ".join(parts) or "-"
 
 
-# ---------- المكافأة اليومية (تزيد عودة اللاعبين) ----------
+# ---------- إعلانات المكافأة: عدّاد يومي محفوظ ----------
+def ad_used_today():
+    return save["ad_count"] if save["ad_date"] == datetime.date.today().toordinal() else 0
+
+
+def ad_register():
+    t = datetime.date.today().toordinal()
+    if save["ad_date"] != t:
+        save["ad_date"] = t
+        save["ad_count"] = 0
+    save["ad_count"] += 1
+
+
+# ---------- المكافأة اليومية ----------
 DAILY_REWARDS = [dict(coins=500), dict(coins=800), dict(coins=1200, bombs=1), dict(coins=1800),
                  dict(coins=2500, revives=1), dict(coins=3500), dict(coins=6000, crystals=15)]
 
 
 def daily_state():
-    """يعيد (يوم السلسلة الحالي, هل الجائزة متاحة اليوم)."""
     t = datetime.date.today().toordinal()
     last = save["daily_last"]
     if last == t:
@@ -434,7 +414,7 @@ def claim_daily():
     return "CLAIMED: " + reward_text(DAILY_REWARDS[day]) + extra
 
 
-# ---------- تذكرة ستارفول (Battle Pass): 30 مستوى، مسار مجاني ومسار مميز ----------
+# ---------- تذكرة ستارفول ----------
 PASS_TIERS = 30
 PASS_XP_PER_TIER = 100
 _PASS_SPECIAL = {5: dict(bombs=5), 10: dict(skins=["aurora"]), 15: dict(revives=5),
@@ -452,11 +432,11 @@ def pass_tier():
 
 
 def add_pass_xp(n):
-    save["pass_xp"] = min(PASS_TIERS * PASS_XP_PER_TIER, save["pass_xp"] + int(n))
+    n = int(n * (1 + 0.1 * save["xp_lv"]))
+    save["pass_xp"] = min(PASS_TIERS * PASS_XP_PER_TIER, save["pass_xp"] + n)
 
 
 def claim_pass():
-    """يستلم كل مكافآت المستويات المفتوحة. يعيد عدد المكافآت."""
     got = 0
     for t in range(1, pass_tier() + 1):
         if t not in save["pass_free"]:
@@ -472,20 +452,20 @@ def claim_pass():
 
 
 # ================= دوال مساعدة =================
-
-# دوال الألوان والأرقام: lerp = استيفاء بين رقمين، mix = مزج لونين، shade = تعتيم/تفتيح لون
 def lerp(a, b, t):
     return a + (b - a) * t
+
 
 def mix(c1, c2, t):
     return (int(lerp(c1[0], c2[0], t)), int(lerp(c1[1], c2[1], t)),
             int(lerp(c1[2], c2[2], t)))
 
+
 def shade(c, f):
     return (clamp(int(c[0] * f), 0, 255), clamp(int(c[1] * f), 0, 255),
             clamp(int(c[2] * f), 0, 255))
 
-# يرسم نصاً على اللوحة (مع ظل أسود للوضوح)
+
 def text(s, font, col, x, y, center=False, right=False, shadow=True):
     img = font.render(s, True, col)
     if center:
@@ -497,28 +477,28 @@ def text(s, font, col, x, y, center=False, right=False, shadow=True):
         canvas.blit(font.render(s, True, (0, 0, 0)), (int(x) + 2, int(y) + 2))
     canvas.blit(img, (int(x), int(y)))
 
-# شاشة تحميل بسيطة تظهر أثناء توليد الرسومات والأصوات
+
 def show_loading(msg):
     canvas.fill((4, 5, 14))
     text(msg, F_M, GOLD_LIGHT, WIDTH // 2, HEIGHT // 2, center=True)
-    window.blit(canvas, (0, 0))
-    pygame.display.flip()
+    present()
     pygame.event.pump()
 
-# اسم المفتاح للعرض على الشاشة
+
 def kname(code):
     try:
         return pygame.key.name(code).upper()
     except Exception:
         return "?"
 
-# ---------- التوهج (إضاءة بوضع الإضافة) ----------
+
 _glow_cache = {}
+
 
 def _q(c):
     return ((c[0] >> 4) << 4, (c[1] >> 4) << 4, (c[2] >> 4) << 4)
 
-# توهج دائري يُرسم مرة واحدة ويُخزَّن (cache) لأنه يُستعمل مئات المرات
+
 def glow_sprite(radius, color):
     key = (radius, color)
     s = _glow_cache.get(key)
@@ -535,15 +515,55 @@ def glow_sprite(radius, color):
         _glow_cache[key] = s
     return s
 
-# يضيف التوهج بوضع الجمع (ADD) فيظهر كضوء حقيقي فوق الخلفية
+
 def add_glow(surf, x, y, radius, color):
     radius = max(3, int(radius))
     g = glow_sprite(radius, _q(color))
-    surf.blit(g, (int(x - radius), int(y - radius)),
-              special_flags=pygame.BLEND_ADD)
+    surf.blit(g, (int(x - radius), int(y - radius)), special_flags=pygame.BLEND_ADD)
 
-# ---------- أداة رسم الصور بالكود ----------
-# Pen = أداة رسم المركبات: ترسم مضلعات ودوائر بإحداثيات نسبية، mirror=True ترسم الجهة المقابلة تلقائياً
+
+# ---------- عرض الشاشة (نسبة أبعاد صحيحة على الهاتف) ----------
+VIEW = SimpleNamespace(scale=1.0, ox=0, oy=0, bg=None, n=0)
+
+
+def present(sx=0, sy=0):
+    """ينسخ اللوحة للنافذة. على أندرويد: تكبير موحّد بلا تمديد، والجوانب بخلفية ضبابية من المشهد نفسه."""
+    VIEW.n += 1
+    if not ANDROID:
+        window.fill((0, 0, 0))
+        window.blit(canvas, (sx, sy))
+        pygame.display.flip()
+        return
+    ww, wh = window.get_size()
+    sc = min(ww / float(WIDTH), wh / float(HEIGHT))
+    dw, dh = max(1, int(WIDTH * sc)), max(1, int(HEIGHT * sc))
+    VIEW.scale = sc
+    VIEW.ox = (ww - dw) // 2
+    VIEW.oy = (wh - dh) // 2
+    if VIEW.ox > 2 or VIEW.oy > 2:
+        if VIEW.bg is None or VIEW.bg.get_size() != (ww, wh) or VIEW.n % 3 == 0:
+            try:
+                small = pygame.transform.smoothscale(canvas, (max(2, ww // 40), max(2, wh // 40)))
+                bg = pygame.transform.smoothscale(small, (ww, wh))
+                bg.fill((100, 100, 115), special_flags=pygame.BLEND_RGB_MULT)
+                VIEW.bg = bg
+            except Exception:
+                VIEW.bg = None
+        if VIEW.bg is not None:
+            window.blit(VIEW.bg, (0, 0))
+        else:
+            window.fill((0, 0, 0))
+    else:
+        window.fill((0, 0, 0))
+    frame = pygame.transform.scale(canvas, (dw, dh))
+    window.blit(frame, (VIEW.ox + int(sx * sc), VIEW.oy + int(sy * sc)))
+    if VIEW.ox > 2:
+        pygame.draw.line(window, (60, 110, 190), (VIEW.ox - 1, 0), (VIEW.ox - 1, wh), 2)
+        pygame.draw.line(window, (60, 110, 190), (VIEW.ox + dw, 0), (VIEW.ox + dw, wh), 2)
+    pygame.display.flip()
+
+
+# ---------- أداة الرسم ----------
 class Pen:
     def __init__(self, s, ox, oy, k):
         self.s, self.ox, self.oy, self.k = s, ox, oy, k
@@ -562,7 +582,6 @@ class Pen:
                 pygame.draw.polygon(self.s, edge, p, self._w(ew))
 
     def gpoly(self, pts, c1, c2, edge=None, ew=2, mirror=False):
-        """polygon with layered highlight (modern shaded look)."""
         self.poly(pts, c2, edge, ew, mirror)
         cx = sum(x for x, _ in pts) / len(pts)
         cy = sum(y for _, y in pts) / len(pts)
@@ -575,13 +594,11 @@ class Pen:
         self.line(a, b, mix(col, WHITE, 0.8), max(0.6, w * 0.6), mirror)
 
     def rect(self, x, y, w, h, col, edge=None, ew=2, mirror=False):
-        self.poly([(x, y), (x + w, y), (x + w, y + h), (x, y + h)],
-                  col, edge, ew, mirror)
+        self.poly([(x, y), (x + w, y), (x + w, y + h), (x, y + h)], col, edge, ew, mirror)
 
     def ell(self, cx, cy, rx, ry, col, edge=None, ew=2, mirror=False):
         for m in ((1, -1) if mirror else (1,)):
-            r = pygame.Rect(0, 0, max(2, int(rx * 2 * self.k)),
-                            max(2, int(ry * 2 * self.k)))
+            r = pygame.Rect(0, 0, max(2, int(rx * 2 * self.k)), max(2, int(ry * 2 * self.k)))
             r.center = (int(self.ox + cx * m * self.k), int(self.oy + cy * self.k))
             pygame.draw.ellipse(self.s, col, r)
             if edge:
@@ -601,15 +618,16 @@ class Pen:
             pb = (self.ox + b[0] * m * self.k, self.oy + b[1] * self.k)
             pygame.draw.line(self.s, col, pa, pb, self._w(w))
 
-# يصنع صورة: يرسم بحجم مضاعف ثم يصغّرها ليحصل على حواف ناعمة
+
 def make_sprite(w, h, fn, *args, scale=1.0):
     big = pygame.Surface((w * 2, h * 2), pygame.SRCALPHA)
     fn(Pen(big, w, h, 2.0 * scale), *args)
     return pygame.transform.smoothscale(big, (w, h))
 
+
 _flash_cache = {}
 
-# نسخة بيضاء مضيئة من الصورة تظهر لحظة إصابة العدو
+
 def flash_version(spr):
     f = _flash_cache.get(id(spr))
     if f is None:
@@ -618,7 +636,7 @@ def flash_version(spr):
         _flash_cache[id(spr)] = f
     return f
 
-# يرسم لهب المحرك (3 طبقات + توهج) ويرتعش مع الزمن
+
 def draw_flame(surf, x, y, w, length, color, anim, up=False):
     L = length * (0.8 + 0.2 * math.sin(anim * 0.55))
     d = -1 if up else 1
@@ -629,9 +647,8 @@ def draw_flame(surf, x, y, w, length, color, anim, up=False):
                         [(x - w * 0.25, y), (x + w * 0.25, y), (x, y + L * 0.4 * d)])
     add_glow(surf, x, y + L * 0.3 * d, w * 3 + 4, color)
 
-# ================= توليد الصوت بالكود (بدون ملفات) =================
 
-# محرك توليد الصوت: ندخل دالة رياضية تعطي كل عينة صوتية، ثم نضيف صدى ونحوّلها لصوت pygame
+# ================= توليد الصوت =================
 def synth(duration, fn, vol=0.6, echo=None):
     if not SOUND_ENABLED:
         return None
@@ -657,12 +674,12 @@ def synth(duration, fn, vol=0.6, echo=None):
     except Exception:
         return None
 
-# غلاف الصوت: بداية سريعة ثم تلاشٍ تدريجي
+
 def _env(p, a=0.02, pw=1.6):
     return min(1.0, p / a) * (1 - p) ** pw
 
+
 def chirp(f0, f1, dur, vol, harm=0.4, noise=0.0, pw=1.6, a=0.03, trem=0, click=0.0, sq=0.0, echo=None, sub=0.0):
-    """نغمة متغيرة التردد. click = نقرة بداية، sub = دوي منخفض يعطي قوة، echo = صدى."""
     def fn(t, p):
         ph = f0 * t + 0.5 * (f1 - f0) * t * p
         sn = math.sin(TAU * ph)
@@ -680,7 +697,7 @@ def chirp(f0, f1, dur, vol, harm=0.4, noise=0.0, pw=1.6, a=0.03, trem=0, click=0
         return v * _env(p, a, pw)
     return synth(dur, fn, vol, echo)
 
-# صوت انفجار حقيقي: فرقعة البداية + ضجيج منخفض + دوي عميق + قرقعة حطام + صدى
+
 def blast(dur, vol, low=0.2, thump=70, pw=1.5, crackle=0.0, rumble=0.0, echo=None):
     st = [0.0, 0.0, 0.0]
 
@@ -700,7 +717,7 @@ def blast(dur, vol, low=0.2, thump=70, pw=1.5, crackle=0.0, rumble=0.0, echo=Non
         return v * _env(p, 0.002, pw)
     return synth(dur, fn, vol, echo)
 
-# نغمات متتابعة (تُستعمل لأصوات الجوائز والشراء والفوز)
+
 def arp(notes, step, vol, harm=0.35, pw=1.2):
     def fn(t, p):
         i = min(len(notes) - 1, int(t / step))
@@ -710,14 +727,14 @@ def arp(notes, step, vol, harm=0.35, pw=1.2):
             (1 - lt) ** pw * min(1.0, lt * 30)
     return synth(step * len(notes), fn, vol)
 
-# صفارة إنذار تتأرجح (ظهور الزعيم)
+
 def siren(dur, vol):
     def fn(t, p):
         ph = 520 * t - (160 / (TAU * 2.2)) * math.cos(TAU * 2.2 * t)
         return math.sin(TAU * ph) * 0.8 * min(1.0, t * 20) * min(1.0, (dur - t) * 10)
     return synth(dur, fn, vol)
 
-# مولّد الموسيقى: وتر خلفي هادئ + خط باص + نغمات متسلسلة حسب سلسلة الأوتار prog
+
 def music_track(prog, bpm, minor=True, pat=(0, 1, 2, 1)):
     beat = 60.0 / bpm
     bar = beat * 4
@@ -745,16 +762,16 @@ def music_track(prog, bpm, minor=True, pat=(0, 1, 2, 1)):
         return (pad + bass + a) * fade
     return synth(total, fn, 0.55)
 
+
 def engine_hum():
-    """حلقة هدير المحرك (ثانية واحدة بترددات صحيحة لتتكرر دون فرقعة)."""
     def fn(t, p):
         v = math.sin(TAU * 55 * t) * 0.6 + math.sin(TAU * 110 * t) * 0.35 + math.sin(TAU * 165 * t + 1.0) * 0.18
         v *= 0.75 + 0.25 * math.sin(TAU * 6 * t)
         return v * 0.5
     return synth(1.0, fn, 0.5)
 
+
 def roar(dur, vol):
-    """زئير الزعيم: نغمة منخفضة مع تعديل ترددي وضجيج."""
     def fn(t, p):
         f = 90 - 40 * p
         mod = math.sin(TAU * 17 * t) * 3.0
@@ -763,16 +780,16 @@ def roar(dur, vol):
         return v * _env(p, 0.05, 0.9)
     return synth(dur, fn, vol, (0.12, 0.4, 3))
 
+
 def zap():
-    """صوت برق كهربائي (سلاح تسلا)."""
     def fn(t, p):
         f = 3200 - 2400 * p
         v = math.sin(TAU * f * t) * (1 if random.random() < 0.7 else -1) + random.uniform(-1, 1) * 0.6
         return v * _env(p, 0.01, 1.2)
     return synth(0.22, fn, 0.38, (0.04, 0.35, 2))
 
+
 def whoosh(dur, vol, up=True):
-    """صفير هواء/صاروخ: ضجيج مفلتر يتصاعد أو يتناقص."""
     st = [0.0]
 
     def fn(t, p):
@@ -782,14 +799,14 @@ def whoosh(dur, vol, up=True):
         return st[0] * 5.0 * math.sin(math.pi * p) ** 1.5
     return synth(dur, fn, vol, (0.06, 0.3, 2))
 
+
 def alarm_beep():
-    """إنذار انخفاض الصحة."""
     def fn(t, p):
         f = 880 if (t * 6) % 1 < 0.5 else 660
         return math.sin(TAU * f * t) * 0.8 * min(1.0, t * 40) * min(1.0, (0.5 - t) * 40)
     return synth(0.5, fn, 0.4)
 
-# قواميس الأصوات والموسيقى وقنوات التشغيل
+
 S = {}
 MUSIC = {}
 _last_play = {}
@@ -797,10 +814,12 @@ _cur_music = [None]
 MUSIC_CH = None
 ENGINE_CH = None
 _engine_on = [False]
+# أسلحة جديدة تستعير صوت سلاح موجود
+SND_ALIAS = dict(twin="rapid", inferno="rapid", cryo="photon", railgun="lance",
+                 swarm="missile", ripper="flak", novaring="special")
+
 
 def build_sounds():
-    """يبني كل الأصوات بالكود. كل سلاح له صوت مميز (نغمة + نقرة + دوي + صدى)."""
-    # ---- أسلحة اللاعب ----
     S["laser"] = chirp(1800, 260, 0.18, 0.42, 0.7, click=0.6, sq=0.35, echo=(0.05, 0.35, 2), sub=140)
     S["spread"] = chirp(1000, 180, 0.22, 0.42, 0.9, 0.1, click=0.7, echo=(0.05, 0.35, 2), sub=110)
     S["rapid"] = chirp(2400, 650, 0.07, 0.3, 0.3, click=1.0, sub=200)
@@ -809,13 +828,11 @@ def build_sounds():
     S["flak"] = blast(0.35, 0.55, 0.5, 120, 1.8, 0.05, 0.3, echo=(0.05, 0.3, 2))
     S["tesla"] = zap()
     S["special"] = chirp(120, 900, 0.5, 0.5, 0.8, 0.15, 1.2, trem=18, echo=(0.08, 0.35, 2), sub=60)
-    # ---- العدو والزعيم ----
     S["enemy_fire"] = chirp(560, 160, 0.15, 0.28, 0.5, 0.3, click=0.5, sub=90)
     S["mine"] = chirp(300, 120, 0.2, 0.35, 0.5, click=0.4)
     S["roar"] = roar(1.6, 0.8)
     S["teleport"] = whoosh(0.5, 0.45, False)
     S["beam"] = chirp(120, 130, 0.9, 0.5, 1.2, 0.2, pw=0.3, a=0.1, trem=40, echo=(0.1, 0.3, 2))
-    # ---- انفجارات (نسختان لكل حجم لتنويع الصوت) ----
     S["boom_s"] = [blast(0.5, 0.6, 0.35, 85, 1.5, 0.04, 0.5, echo=(0.07, 0.3, 2)) for _ in range(2)]
     S["boom_m"] = [blast(0.9, 0.7, 0.2, 60, 1.4, 0.06, 0.8, echo=(0.1, 0.35, 3)) for _ in range(2)]
     S["boom_l"] = [blast(1.4, 0.8, 0.12, 45, 1.2, 0.08, 1.0, echo=(0.13, 0.4, 3)) for _ in range(2)]
@@ -826,7 +843,6 @@ def build_sounds():
     S["hurt"] = blast(0.5, 0.75, 0.5, 100, 1.3, 0.05, 0.5, echo=(0.06, 0.3, 2))
     S["shield"] = chirp(900, 1500, 0.2, 0.3, 0.2, trem=30)
     S["alarm"] = alarm_beep()
-    # ---- جوائز وواجهة ----
     S["coin"] = arp([1318, 1760], 0.06, 0.35)
     S["gem"] = arp([1046, 1318, 1568, 2093], 0.06, 0.35)
     S["powerup"] = arp([523, 659, 784, 1046, 1318], 0.055, 0.4)
@@ -841,14 +857,13 @@ def build_sounds():
     S["singularity"] = chirp(90, 35, 0.7, 0.6, 1.0, 0.1, pw=0.8, trem=9, echo=(0.12, 0.45, 3), sub=50)
     S["crystal"] = arp([1318, 1760, 2093, 2637, 3136], 0.07, 0.45)
     S["engine"] = engine_hum()
-    # ---- موسيقى ----
     MUSIC["menu"] = music_track([98.0, 82.41, 110.0, 87.31], 84, True, (0, 1, 2, 1))
     MUSIC["calm"] = music_track([110.0, 87.31, 130.81, 98.0], 110)
     MUSIC["boss"] = music_track([82.41, 87.31, 82.41, 73.42], 150, True, (0, 2, 1, 2))
     MUSIC["boss2"] = music_track([92.5, 98.0, 82.41, 87.31], 160, True, (0, 2, 1, 0))
     apply_volumes()
 
-# تطبيق مستوى الصوت المختار في الإعدادات على كل الأصوات
+
 def apply_volumes():
     if not SOUND_ENABLED:
         return
@@ -859,7 +874,7 @@ def apply_volumes():
     if MUSIC_CH is not None:
         MUSIC_CH.set_volume(save["music"] / 10.0 * 0.45)
 
-# تشغيل مؤثر صوتي (gap = أقل فاصل بين تكرارين لمنع تراكم الأصوات)
+
 def sfx(name, gap=30, vol=1.0):
     if not SOUND_ENABLED or pygame.mixer.get_init() is None:
         return
@@ -879,8 +894,8 @@ def sfx(name, gap=30, vol=1.0):
     except pygame.error:
         return
 
+
 def set_engine(flag):
-    """تشغيل/إيقاف هدير المحرك أثناء اللعب فقط."""
     if not SOUND_ENABLED or ENGINE_CH is None or not S.get("engine"):
         return
     if flag and not _engine_on[0]:
@@ -890,7 +905,7 @@ def set_engine(flag):
         ENGINE_CH.stop()
     _engine_on[0] = flag
 
-# تبديل الموسيقى الخلفية (قائمة / مرحلة / زعيم)
+
 def set_music(name):
     if not SOUND_ENABLED or MUSIC_CH is None:
         return
@@ -906,7 +921,6 @@ def set_music(name):
         return
 
 # ================= تصاميم المركبات والأعداء =================
-# ألوان المركبة الأساسية: الأول للاعب 1 (أحمر) والثاني للاعب 2 (أزرق)
 SHIP_PALS = [
     dict(hull=(176, 40, 46), light=(232, 92, 80), dark=(88, 18, 28),
          wing=(132, 30, 40), trim=(70, 235, 220), flame=(60, 220, 255)),
@@ -914,9 +928,8 @@ SHIP_PALS = [
          wing=(30, 66, 150), trim=(255, 205, 80), flame=(255, 190, 70)),
 ]
 
-# المركبة الأساسية (فانجارد). tier = مستوى التطور حسب قوة السلاح: 0 أساسي، 1 أجنحة ومدافع، 2 شفرات طاقة
+
 def draw_player_ship(p, pal, tier=0):
-    """Modern red battlecruiser-fighter. tier 0/1/2 (weapon power) adds wings and cannons."""
     H, L, D, W, T = pal["hull"], pal["light"], pal["dark"], pal["wing"], pal["trim"]
     if tier >= 2:
         p.gpoly([(-46, 0), (-92, 40), (-88, 74), (-60, 60), (-44, 30)], L, W, BLACK, 2.5, mirror=True)
@@ -940,7 +953,6 @@ def draw_player_ship(p, pal, tier=0):
     p.poly([(-10, -26), (10, -26), (13, -4), (-13, -4)], D, BLACK, 1)
     p.neon((-9, 0), (-11, 44), T, 1.2, mirror=True)
     p.poly([(-5, -58), (5, -58), (3, -48), (-3, -48)], D, None, 2)
-    # فتحات تهوية ومآخذ هواء جانبية ومسامير
     for yy in (-20, -12):
         p.line((-12, yy), (-7, yy + 3), D, 1.5, mirror=True)
     p.poly([(-17, 10), (-24, 22), (-17, 30)], D, BLACK, 1, mirror=True)
@@ -959,14 +971,14 @@ def draw_player_ship(p, pal, tier=0):
         p.poly([(0, -92), (-4, -76), (4, -76)], pal["light"], BLACK, 1.5)
         p.poly([(-3, 8), (0, 2), (3, 8)], T, BLACK, 1)
 
+
 def draw_ship_falcon(p, pal, tier=0):
-    """الصقر: مركبة رشيقة بأجنحة مائلة للأمام (سريعة وضعيفة الدرع)."""
     H, L, D, W, T = pal["hull"], pal["light"], pal["dark"], pal["wing"], pal["trim"]
-    if tier >= 2:  # شفرات أمامية كبيرة
+    if tier >= 2:
         p.gpoly([(-30, -26), (-88, -4), (-82, 28), (-34, 10)], L, W, BLACK, 2.5, mirror=True)
         p.neon((-40, -14), (-80, 10), T, 1.5, mirror=True)
         p.circ(-84, 24, 3.5, T, WHITE, 1, mirror=True)
-    if tier >= 1:  # مدافع جانبية
+    if tier >= 1:
         p.rect(-48, -6, 5, 42, GRAY_D, BLACK, 1.5, mirror=True)
         p.rect(-47, -12, 3, 7, T, BLACK, 1, mirror=True)
     p.gpoly([(-8, 6), (-54, -12), (-62, 30), (-36, 60), (-10, 46)], L, W, BLACK, 2.5, mirror=True)
@@ -987,13 +999,13 @@ def draw_ship_falcon(p, pal, tier=0):
     p.rect(-9, 64, 6, 6, GRAY_D, BLACK, 1)
     p.rect(3, 64, 6, 6, GRAY_D, BLACK, 1)
 
+
 def draw_ship_titan(p, pal, tier=0):
-    """العملاق: مركبة ثقيلة عريضة بدروع ومدافع كبيرة (بطيئة وقوية)."""
     H, L, D, W, T = pal["hull"], pal["light"], pal["dark"], pal["wing"], pal["trim"]
-    if tier >= 2:  # أكتاف درعية إضافية
+    if tier >= 2:
         p.gpoly([(-60, -6), (-98, 20), (-94, 68), (-62, 60)], L, W, BLACK, 2.5, mirror=True)
         p.neon((-70, 8), (-90, 60), T, 1.6, mirror=True)
-    if tier >= 1:  # مدافع ثقيلة
+    if tier >= 1:
         p.rect(-80, -22, 8, 50, GRAY_D, BLACK, 1.5, mirror=True)
         p.rect(-79, -28, 6, 7, T, BLACK, 1, mirror=True)
     p.gpoly([(-14, -26), (-62, -8), (-72, 44), (-54, 66), (-14, 50)], L, W, BLACK, 3, mirror=True)
@@ -1016,10 +1028,10 @@ def draw_ship_titan(p, pal, tier=0):
     for x in (-18, -5, 8):
         p.rect(x, 66, 10, 8, GRAY_D, BLACK, 1.5)
 
+
 def draw_ship_phantom(p, pal, tier=0):
-    """الشبح: جناح طائر خفي بحواف نيون (ضرر عالٍ ودرع ضعيف)."""
     H, L, D, W, T = pal["hull"], pal["light"], pal["dark"], pal["wing"], pal["trim"]
-    if tier >= 2:  # أشواك وأجنحة سفلية
+    if tier >= 2:
         p.gpoly([(-44, 22), (-90, 62), (-62, 66), (-40, 48)], L, W, BLACK, 2.5, mirror=True)
         p.neon((-48, 30), (-84, 62), T, 1.6, mirror=True)
         p.circ(-88, 62, 3.5, T, WHITE, 1, mirror=True)
@@ -1042,8 +1054,8 @@ def draw_ship_phantom(p, pal, tier=0):
     p.rect(-9, 62, 5, 6, GRAY_D, BLACK, 1)
     p.rect(4, 62, 5, 6, GRAY_D, BLACK, 1)
 
+
 def draw_ship_nova(p, pal, tier=0):
-    """نوفا (مميزة بالكريستال): جناحان هلاليان وبلورة طاقة في القلب."""
     H, L, D, W, T = pal["hull"], pal["light"], pal["dark"], pal["wing"], pal["trim"]
     if tier >= 2:
         p.gpoly([(-40, -30), (-96, -6), (-90, 40), (-44, 16)], L, W, BLACK, 2.5, mirror=True)
@@ -1071,7 +1083,6 @@ def draw_ship_nova(p, pal, tier=0):
 
 
 def draw_ship_eclipse(p, pal, tier=0):
-    """إكليبس (مميزة بالكريستال): مركبة سوداء بحواف ذهبية وهالة كسوف."""
     H, L, D, W, T = pal["hull"], pal["light"], pal["dark"], pal["wing"], pal["trim"]
     if tier >= 2:
         p.gpoly([(-50, 10), (-100, 46), (-92, 76), (-58, 60)], L, W, BLACK, 2.5, mirror=True)
@@ -1099,32 +1110,89 @@ def draw_ship_eclipse(p, pal, tier=0):
         p.poly([(0, -98), (-4, -82), (4, -82)], T, BLACK, 1.5)
 
 
+def draw_ship_viper(p, pal, tier=0):
+    """فايبر: سهم رفيع بأجنحة خلفية حادة (الأسرع)."""
+    H, L, D, W, T = pal["hull"], pal["light"], pal["dark"], pal["wing"], pal["trim"]
+    if tier >= 2:
+        p.gpoly([(-30, 0), (-86, 30), (-80, 56), (-34, 36)], L, W, BLACK, 2.5, mirror=True)
+        p.neon((-40, 10), (-78, 46), T, 1.5, mirror=True)
+        p.circ(-82, 52, 3.5, T, WHITE, 1, mirror=True)
+    if tier >= 1:
+        p.rect(-46, -2, 4, 38, GRAY_D, BLACK, 1.5, mirror=True)
+        p.circ(-44, -6, 2.5, T, WHITE, 1, mirror=True)
+    p.gpoly([(-8, -30), (-58, 22), (-66, 56), (-30, 48), (-10, 34)], L, W, BLACK, 2.5, mirror=True)
+    p.poly([(-12, -14), (-48, 24), (-54, 44), (-14, 30)], D, None, 2, mirror=True)
+    p.neon((-10, -26), (-60, 50), T, 1.6, mirror=True)
+    p.poly([(-12, 36), (-30, 66), (-14, 62)], D, BLACK, 1.5, mirror=True)
+    hull = [(0, -86), (-5, -60), (-10, -24), (-12, 16), (-10, 50), (0, 62),
+            (10, 50), (12, 16), (10, -24), (5, -60)]
+    p.gpoly(hull, L, H, BLACK, 2.5)
+    p.line((0, -82), (0, 56), D, 2)
+    p.neon((-6, -10), (-8, 40), T, 1.2, mirror=True)
+    p.ell(0, -44, 4.5, 16, (14, 36, 70), BLACK, 1.5)
+    p.ell(0, -46, 3, 12, (130, 230, 255))
+    p.ell(-1, -53, 1.2, 4, WHITE)
+    p.circ(0, 26, 6, (14, 20, 40), BLACK, 2)
+    p.circ(0, 26, 3.5, T)
+    p.rect(-8, 58, 5, 6, GRAY_D, BLACK, 1)
+    p.rect(3, 58, 5, 6, GRAY_D, BLACK, 1)
+
+
+def draw_ship_seraph(p, pal, tier=0):
+    """سيراف (مميزة): أجنحة ريشية وهالة ذهبية."""
+    H, L, D, W, T = pal["hull"], pal["light"], pal["dark"], pal["wing"], pal["trim"]
+    if tier >= 2:
+        p.gpoly([(-40, -24), (-100, -30), (-96, 20), (-70, 56), (-40, 30)], L, W, BLACK, 2.5, mirror=True)
+        p.neon((-48, -14), (-92, -14), T, 1.6, mirror=True)
+        p.circ(-96, 16, 3.5, T, WHITE, 1, mirror=True)
+    if tier >= 1:
+        p.rect(-48, -10, 5, 38, GRAY_D, BLACK, 1.5, mirror=True)
+        p.circ(-45, -14, 3, T, WHITE, 1, mirror=True)
+    p.gpoly([(-10, -12), (-48, -44), (-88, -34), (-82, 2), (-62, 34), (-30, 50), (-12, 30)], L, W, BLACK, 2.5, mirror=True)
+    for i, (a, b) in enumerate((((-14, -4), (-78, -24)), ((-14, 8), (-72, 2)), ((-14, 20), (-58, 28)))):
+        p.neon(a, b, T, 1.3, mirror=True)
+    p.poly([(-12, 0), (-44, -18), (-60, 6), (-40, 30), (-14, 28)], D, None, 2, mirror=True)
+    hull = [(0, -78), (-7, -52), (-12, -22), (-14, 14), (-11, 46), (-5, 62),
+            (5, 62), (11, 46), (14, 14), (12, -22), (7, -52)]
+    p.gpoly(hull, L, H, BLACK, 2.5)
+    p.line((0, -74), (0, 58), D, 2)
+    p.poly([(0, -2), (-8, 14), (0, 32), (8, 14)], (30, 20, 50), BLACK, 1.5)
+    p.poly([(0, 2), (-5, 14), (0, 26), (5, 14)], T)
+    p.ell(0, -42, 4.5, 14, (14, 36, 70), BLACK, 1.5)
+    p.ell(0, -44, 3, 10, (255, 240, 190))
+    p.circ(0, -68, 9, (255, 225, 120))
+    p.circ(0, -68, 6, (18, 14, 34))
+    p.rect(-9, 60, 6, 6, GRAY_D, BLACK, 1)
+    p.rect(3, 60, 6, 6, GRAY_D, BLACK, 1)
+
+
 def draw_drone(p):
-    """طائرة مرافقة صغيرة تطلق النار تلقائياً."""
     p.poly([(-4, -6), (-18, 6), (-14, 10), (-4, 4)], GRAY, BLACK, 1.5, mirror=True)
     p.circ(0, 0, 8, GRAY_D, BLACK, 2)
     p.circ(0, 0, 5, CYAN_G)
     p.circ(-1.5, -1.5, 1.6, WHITE)
     p.rect(-2, 6, 4, 5, GRAY, BLACK, 1)
 
+
 CYAN_G = (90, 210, 255)
 
-# ألوان نيون تُستعمل في تفاصيل الأعداء
 NEON_R = (255, 70, 90)
 NEON_O = (255, 150, 40)
 NEON_M = (255, 80, 225)
 NEON_C = (60, 225, 255)
 NEON_Y = (255, 220, 70)
 
-# مظاهر المركبة (skins): اللون الأساسي ولون الزخرفة. "classic" = ألوان المركبة الأصلية
+# مظاهر المركبة: (اللون الأساسي، لون الزخرفة)
 SKIN_COL = dict(ice=((110, 190, 255), (255, 255, 255)), crimson=((220, 50, 70), (255, 200, 90)),
                 stealth=((64, 68, 92), (255, 70, 70)), gold=((245, 190, 60), (255, 255, 200)),
-                aurora=((80, 230, 170), (200, 120, 255)), void=((120, 60, 200), (60, 255, 230)))
-TRAIL_COL = dict(pink=(255, 80, 200), rainbow=None)  # rainbow = يتغير لونه مع الزمن
+                aurora=((80, 230, 170), (200, 120, 255)), void=((120, 60, 200), (60, 255, 230)),
+                neon=((20, 220, 150), (255, 60, 200)), magma=((230, 80, 30), (255, 220, 80)),
+                sakura=((255, 160, 200), (255, 255, 255)), royal=((70, 60, 200), (255, 215, 90)))
+TRAIL_COL = dict(pink=(255, 80, 200), rainbow=None, galaxy=None, green=(90, 255, 120),
+                 fire=(255, 110, 30), gold=(255, 215, 90))
 
 
 def skin_pal(pal, skin):
-    """يعيد ألوان مركبة بعد تطبيق المظهر."""
     if skin == "classic" or skin not in SKIN_COL:
         return pal
     main, trim = SKIN_COL[skin]
@@ -1133,17 +1201,19 @@ def skin_pal(pal, skin):
 
 
 def trail_color(pal, anim):
-    """لون لهب المحرك حسب الأثر المختار."""
     t = save["trail"]
     if t == "rainbow":
         a = anim * 0.05
         return (int(150 + 105 * math.sin(a)), int(150 + 105 * math.sin(a + 2.09)), int(150 + 105 * math.sin(a + 4.19)))
+    if t == "galaxy":
+        a = anim * 0.04
+        return (int(130 + 90 * math.sin(a)), int(70 + 60 * math.sin(a + 2.0)), int(210 + 45 * math.sin(a + 4.0)))
     if t in TRAIL_COL and TRAIL_COL[t]:
         return TRAIL_COL[t]
     return pal["flame"]
 
 
-# ----- تصاميم الأعداء الستة (كل واحد يُرسم بالكود، ورأسه للأعلى ثم يُقلب للأسفل) -----
+# ----- الأعداء -----
 def draw_scout(p):
     p.gpoly([(-8, -6), (-38, 14), (-36, 30), (-12, 26)], (100, 110, 145), (34, 38, 62), BLACK, 2, mirror=True)
     p.neon((-12, 12), (-34, 24), NEON_R, 1.3, mirror=True)
@@ -1154,6 +1224,7 @@ def draw_scout(p):
     p.ell(-1, -13, 1.4, 4, WHITE)
     p.neon((0, -28), (0, -18), NEON_R, 1.2)
     p.circ(-30, 24, 2.5, NEON_R, BLACK, 1, mirror=True)
+
 
 def draw_fighter(p):
     p.gpoly([(-8, -18), (-46, 6), (-50, 34), (-14, 28)], (110, 118, 150), (36, 40, 64), BLACK, 2.5, mirror=True)
@@ -1170,6 +1241,7 @@ def draw_fighter(p):
     p.circ(0, 18, 4, NEON_O, BLACK, 1)
     p.rect(-6, 36, 12, 6, GRAY_D, BLACK, 1)
 
+
 def draw_bee(p):
     for m in (1, -1):
         w = [(m * 8, -4), (m * 36, -22), (m * 42, -10), (m * 32, 2), (m * 10, 6)]
@@ -1185,6 +1257,7 @@ def draw_bee(p):
         p.line((sx * 12, 6), (sx * 24, 22), (110, 60, 30), 2)
         p.line((sx * 11, -2), (sx * 24, 8), (110, 60, 30), 2)
 
+
 def draw_clawer(p):
     p.gpoly([(-30, -34), (-14, -34), (-14, 6), (14, 6), (14, -34), (30, -34), (30, 22), (18, 36), (-18, 36), (-30, 22)],
             (150, 80, 140), (52, 28, 62), BLACK, 3)
@@ -1197,6 +1270,7 @@ def draw_clawer(p):
     p.ell(-1.5, -12, 2, 5, WHITE)
     p.rect(-14, 36, 8, 6, GRAY_D, BLACK, 1)
     p.rect(6, 36, 8, 6, GRAY_D, BLACK, 1)
+
 
 def draw_shielder(p):
     p.gpoly([(-30, -2), (-48, -10), (-44, 28), (-30, 22)], (120, 160, 200), (34, 50, 80), BLACK, 2.5, mirror=True)
@@ -1213,6 +1287,7 @@ def draw_shielder(p):
     p.rect(-14, 40, 8, 8, GRAY_D, BLACK, 1)
     p.rect(6, 40, 8, 8, GRAY_D, BLACK, 1)
 
+
 def draw_heavy(p):
     p.gpoly([(-8, -24), (-50, -48), (-62, 16), (-40, 44), (-8, 32)], (210, 150, 80), (84, 52, 44), BLACK, 3.5, mirror=True)
     for i in range(4):
@@ -1227,11 +1302,11 @@ def draw_heavy(p):
     p.rect(-10, 48, 8, 8, GRAY_D, BLACK, 1)
     p.rect(2, 48, 8, 8, GRAY_D, BLACK, 1)
 
-# سجل المركبات: دالة رسم كل مركبة، ثم مواصفاتها (سرعة، صحة، درع، ضرر، تبريد، سعر، ألوان اللاعبين)
+
 SHIP_DRAW = dict(vanguard=draw_player_ship, falcon=draw_ship_falcon,
                  titan=draw_ship_titan, phantom=draw_ship_phantom,
-                 nova=draw_ship_nova, eclipse=draw_ship_eclipse)
-# كل مركبة: السرعة، تعديل الصحة، تعديل الدرع، مضاعف الضرر، مضاعف زمن التبريد، وألوان اللاعب 1 و 2
+                 nova=draw_ship_nova, eclipse=draw_ship_eclipse,
+                 viper=draw_ship_viper, seraph=draw_ship_seraph)
 SHIP_DEFS = dict(
     vanguard=dict(name="VANGUARD", desc="Balanced battlecruiser", price=0, speed=6.0, hp=0, shield=0, dmg=1.0, cool=1.0,
                   pals=SHIP_PALS),
@@ -1250,7 +1325,11 @@ SHIP_DEFS = dict(
                             trim=(190, 90, 255), flame=(190, 110, 255)),
                        dict(hull=(40, 70, 70), light=(90, 160, 160), dark=(14, 34, 34), wing=(24, 52, 52),
                             trim=(90, 255, 170), flame=(110, 255, 190))]),
-    # ---- مركبات مميزة تُشترى بالكريستال فقط ----
+    viper=dict(name="VIPER", desc="Needle-fast striker", price=2200, speed=8.2, hp=-1, shield=0, dmg=1.1, cool=0.78,
+               pals=[dict(hull=(30, 120, 70), light=(110, 230, 140), dark=(10, 50, 30), wing=(24, 90, 56),
+                          trim=(255, 240, 90), flame=(150, 255, 110)),
+                     dict(hull=(150, 40, 110), light=(240, 120, 200), dark=(70, 14, 50), wing=(110, 30, 80),
+                          trim=(120, 240, 255), flame=(255, 130, 220))]),
     nova=dict(name="NOVA PRIME", desc="Premium: fast, shielded, +25% dmg", price=900, speed=7.0, hp=0, shield=40, dmg=1.25, cool=0.85,
               pals=[dict(hull=(230, 240, 255), light=(255, 255, 255), dark=(70, 90, 130), wing=(90, 150, 230),
                          trim=(90, 255, 255), flame=(90, 255, 255)),
@@ -1261,9 +1340,13 @@ SHIP_DEFS = dict(
                             trim=(255, 200, 70), flame=(255, 190, 60)),
                        dict(hull=(30, 20, 40), light=(100, 70, 130), dark=(10, 6, 20), wing=(50, 30, 70),
                             trim=(200, 120, 255), flame=(200, 120, 255))]),
+    seraph=dict(name="SERAPH", desc="Premium: angel wings, +60% dmg", price=1800, speed=7.4, hp=1, shield=100, dmg=1.6, cool=0.75,
+                pals=[dict(hull=(240, 236, 220), light=(255, 255, 245), dark=(120, 100, 70), wing=(230, 190, 90),
+                           trim=(255, 215, 90), flame=(255, 225, 130)),
+                      dict(hull=(220, 230, 255), light=(255, 255, 255), dark=(70, 80, 140), wing=(150, 160, 255),
+                           trim=(180, 220, 255), flame=(170, 200, 255))]),
 )
 
-# مواصفات الأعداء: الحياة hp، السرعة، نصف القطر r، النقاط، هل يثبت في مكانه hold، سعة الحركة، زمن الإطلاق fire
 ENEMY_DEFS = dict(
     scout=dict(hp=1.0, speed=3.3, r=22, score=10, size=(76, 76), hold=False, amp=40, freq=0.045, fire=None, fn=draw_scout),
     fighter=dict(hp=2.0, speed=2.7, r=28, score=15, size=(96, 92), hold=False, amp=70, freq=0.03, fire=(70, 150), fn=draw_fighter),
@@ -1274,7 +1357,6 @@ ENEMY_DEFS = dict(
 )
 
 # ---------------- الزعماء ----------------
-# ألوان الزعماء (10 ألوان تتبدل بين الزعماء)
 BOSS_PALS = [
     dict(wing=(205, 210, 222), cannon=(214, 86, 40), ring=(235, 175, 40), eye=(255, 50, 60), body=(50, 60, 125)),
     dict(wing=(200, 225, 205), cannon=(60, 160, 90), ring=(210, 230, 90), eye=(255, 240, 60), body=(30, 90, 70)),
@@ -1290,7 +1372,7 @@ BOSS_PALS = [
 BOSS_ADJ = ["IRON", "VOID", "NOVA", "CRIMSON", "TITAN", "PHANTOM", "OMEGA", "SOLAR", "FROST", "TOXIC"]
 BOSS_NOUN = ["WARDEN", "DEVOURER", "SENTINEL", "OVERLORD"]
 
-# ----- تصاميم الزعماء الثمانية: الجمجمة، الدماغ، الملكة، الحصن، الشبح، التوأم، الكسّار، عين الفراغ -----
+
 def draw_boss_skull(p, pal, tier):
     wing, cannon, ring, eye = pal["wing"], pal["cannon"], pal["ring"], pal["eye"]
     blade = [(-34, -24), (-118, -118), (-148, -92), (-150, -30), (-128, 34), (-72, 62), (-40, 40)]
@@ -1327,6 +1409,7 @@ def draw_boss_skull(p, pal, tier):
         p.poly([(-22, -78), (-12, -112), (-2, -78)], eye, BLACK, 3, mirror=True)
         p.poly([(-6, -78), (0, -120), (6, -78)], eye, BLACK, 3)
 
+
 def draw_boss_brain(p, pal, tier):
     body, cannon, ring, eye = pal["body"], pal["cannon"], pal["ring"], pal["eye"]
     p.poly([(-70, 40), (-96, 104), (-70, 120), (-44, 72)], shade(body, 0.7), BLACK, 3, mirror=True)
@@ -1359,8 +1442,8 @@ def draw_boss_brain(p, pal, tier):
     if tier >= 1:
         p.poly([(-70, -74), (-56, -112), (-44, -78)], eye, BLACK, 3, mirror=True)
 
+
 def draw_boss_hive(p, pal, tier):
-    """ملكة الخلية: جسم حشرة بأجنحة شفافة وعيون مركّبة."""
     body, wing, cannon, ring, eye = pal["body"], pal["wing"], pal["cannon"], pal["ring"], pal["eye"]
     wc = mix(wing, WHITE, 0.25)
     p.poly([(-30, -28), (-140, -112), (-166, -50), (-120, 8), (-40, 0)], wc, BLACK, 3, mirror=True)
@@ -1385,8 +1468,8 @@ def draw_boss_hive(p, pal, tier):
     if tier >= 1:
         p.poly([(-16, -80), (-8, -108), (0, -82)], eye, BLACK, 2, mirror=True)
 
+
 def draw_boss_fortress(p, pal, tier):
-    """الحصن: محطة قتالية مدرعة بعدسة ليزر قاتلة."""
     body, wing, cannon, ring, eye = pal["body"], pal["wing"], pal["cannon"], pal["ring"], pal["eye"]
     p.gpoly([(-60, -62), (-150, -42), (-164, 42), (-134, 78), (-60, 62)], shade(wing, 0.95), shade(body, 0.9), BLACK, 4, mirror=True)
     p.circ(-118, 0, 24, GRAY_D, BLACK, 3, mirror=True)
@@ -1408,8 +1491,8 @@ def draw_boss_fortress(p, pal, tier):
     if tier >= 1:
         p.rect(-34, -112, 10, 22, GRAY, BLACK, 2, mirror=True)
 
+
 def draw_boss_specter(p, pal, tier):
-    """الشبح: كائن رداء متوهج بمخالب طاقة وعيون شبحية."""
     body, wing, cannon, ring, eye = pal["body"], pal["wing"], pal["cannon"], pal["ring"], pal["eye"]
     for x in (-66, -40, -14, 14, 40, 66):
         p.line((x, 36), (x * 1.25, 116), shade(wing, 0.8), 9)
@@ -1432,8 +1515,8 @@ def draw_boss_specter(p, pal, tier):
     if tier >= 1:
         p.circ(0, -66, 7, eye, BLACK, 2)
 
+
 def draw_boss_gemini(p, pal, tier):
-    """التوأم: قرنان قتاليان متصلان بجسر طاقة يطلقان نيراناً متقاطعة."""
     body, wing, cannon, ring, eye = pal["body"], pal["wing"], pal["cannon"], pal["ring"], pal["eye"]
     p.rect(-112, -16, 224, 32, shade(body, 0.8), BLACK, 4)
     p.neon((-100, 0), (100, 0), eye, 2)
@@ -1452,8 +1535,8 @@ def draw_boss_gemini(p, pal, tier):
     if tier >= 1:
         p.poly([(-130, -92), (-120, -124), (-108, -92)], eye, BLACK, 2, mirror=True)
 
+
 def draw_boss_crusher(p, pal, tier):
-    """الكسّار: دبابة فضائية ثقيلة تزرع الألغام."""
     body, wing, cannon, ring, eye = pal["body"], pal["wing"], pal["cannon"], pal["ring"], pal["eye"]
     p.rect(-152, -62, 54, 152, GRAY_D, BLACK, 4, mirror=True)
     for i in range(8):
@@ -1474,8 +1557,8 @@ def draw_boss_crusher(p, pal, tier):
     if tier >= 1:
         p.rect(-54, -108, 12, 26, GRAY, BLACK, 2, mirror=True)
 
+
 def draw_boss_void(p, pal, tier):
-    """عين الفراغ: عين عملاقة تحيط بها حلقات وتجذب كل شيء نحوها."""
     body, wing, cannon, ring, eye = pal["body"], pal["wing"], pal["cannon"], pal["ring"], pal["eye"]
     for (r, c, e) in ((112, (18, 12, 36), ring), (94, (28, 16, 54), cannon), (76, (10, 6, 22), wing)):
         p.circ(0, 0, r, c, e, 3)
@@ -1493,11 +1576,11 @@ def draw_boss_void(p, pal, tier):
     if tier >= 1:
         p.poly([(-14, -112), (0, -148), (14, -112)], eye, BLACK, 2)
 
-# قائمة دوال رسم الزعماء (الرقم = تصميم الزعيم)
+
 BOSS_DRAW = [draw_boss_skull, draw_boss_brain, draw_boss_hive, draw_boss_fortress,
              draw_boss_specter, draw_boss_gemini, draw_boss_crusher, draw_boss_void]
-
 _boss_cache = {}
+
 
 def get_boss_sprite(design, pal_idx, tier):
     key = (design, pal_idx, tier)
@@ -1506,8 +1589,8 @@ def get_boss_sprite(design, pal_idx, tier):
         _boss_cache[key] = make_sprite(300, 250, fn, BOSS_PALS[pal_idx], tier, scale=0.82)
     return _boss_cache[key]
 
-# ---------------- أيقونات الجوائز والمتجر ----------------
-# ألوان أيقونات الجوائز وعناصر المتجر
+
+# ---------------- الأيقونات ----------------
 ICON_COL = dict(
     health=(255, 80, 100), shield=(70, 170, 255), special=(70, 230, 255),
     coin=(255, 200, 60), gem=(255, 90, 220), power=(255, 120, 40),
@@ -1516,22 +1599,26 @@ ICON_COL = dict(
     repair=(90, 255, 150), w_laser=(60, 220, 255), w_spread=(255, 200, 60),
     w_rapid=(255, 70, 170), w_plasma=(190, 110, 255), w_missile=(255, 140, 60),
 )
-
 ICON_COL.update(dict(
     crystal=(190, 120, 255), w_lance=(90, 190, 255), w_photon=(190, 110, 255), w_singularity=(150, 90, 230),
-    ship_nova=(120, 240, 255), ship_eclipse=(255, 200, 70),
+    ship_nova=(120, 240, 255), ship_eclipse=(255, 200, 70), ship_viper=(120, 240, 140), ship_seraph=(255, 225, 130),
     skin_classic=(180, 190, 210), skin_ice=(110, 190, 255), skin_crimson=(220, 50, 70), skin_stealth=(110, 116, 150),
     skin_gold=(245, 190, 60), skin_aurora=(80, 230, 170), skin_void=(150, 90, 230),
+    skin_neon=(20, 230, 160), skin_magma=(240, 90, 40), skin_sakura=(255, 160, 200), skin_royal=(110, 100, 240),
     bundle=(255, 200, 90),
-    trail_pink=(255, 80, 200), trail_rainbow=(255, 220, 120),
+    trail_pink=(255, 80, 200), trail_rainbow=(255, 220, 120), trail_green=(90, 255, 120),
+    trail_fire=(255, 120, 40), trail_gold=(255, 215, 90), trail_galaxy=(170, 110, 255),
     w_flak=(255, 150, 60), w_tesla=(120, 200, 255), firerate=(255, 240, 100), spower=(255, 180, 60),
     speed=(110, 230, 255), regen=(90, 200, 255), coinup=(255, 215, 70), luck=(100, 240, 130),
     drone=(120, 220, 255), revive=(255, 100, 130), ship_vanguard=(230, 90, 80),
-    ship_falcon=(120, 200, 255), ship_titan=(240, 170, 70), ship_phantom=(190, 120, 255)))
-
+    ship_falcon=(120, 200, 255), ship_titan=(240, 170, 70), ship_phantom=(190, 120, 255),
+    w_twin=(90, 220, 255), w_inferno=(255, 130, 40), w_cryo=(150, 220, 255), w_railgun=(120, 255, 255),
+    w_swarm=(255, 170, 80), w_ripper=(210, 215, 230), w_novaring=(255, 120, 230),
+    crit=(255, 90, 90), slayer=(255, 130, 60), xpup=(255, 220, 120),
+    ad=(90, 240, 140), code=(255, 230, 120), vip=(255, 200, 60)))
 ICON_COL["pass"] = (255, 220, 120)
 
-# يرسم أيقونة (جائزة أو عنصر متجر) داخل دائرة متوهجة، لكل نوع رسم خاص
+
 def draw_icon(p, kind):
     col = ICON_COL[kind]
     p.circ(0, 0, 19, (8, 12, 30), col, 2.5)
@@ -1608,6 +1695,7 @@ def draw_icon(p, kind):
     else:
         draw_icon_extra(p, kind, col)
 
+
 SHIP_ICON_PTS = dict(
     vanguard=[(0, -13), (3, -4), (10, 6), (12, 12), (4, 8), (0, 13), (-4, 8), (-12, 12), (-10, 6), (-3, -4)],
     falcon=[(0, -14), (3, -4), (13, -8), (8, 8), (3, 13), (0, 10), (-3, 13), (-8, 8), (-13, -8), (-3, -4)],
@@ -1615,10 +1703,12 @@ SHIP_ICON_PTS = dict(
     phantom=[(0, -14), (4, -6), (13, 12), (5, 8), (0, 13), (-5, 8), (-13, 12), (-4, -6)])
 SHIP_ICON_PTS.update(
     nova=[(0, -14), (3, -6), (13, -8), (10, 6), (4, 12), (0, 8), (-4, 12), (-10, 6), (-13, -8), (-3, -6)],
-    eclipse=[(0, -14), (5, -6), (13, 6), (12, 13), (4, 8), (0, 12), (-4, 8), (-12, 13), (-13, 6), (-5, -6)])
+    eclipse=[(0, -14), (5, -6), (13, 6), (12, 13), (4, 8), (0, 12), (-4, 8), (-12, 13), (-13, 6), (-5, -6)],
+    viper=[(0, -15), (3, -5), (12, 12), (4, 8), (0, 12), (-4, 8), (-12, 12), (-3, -5)],
+    seraph=[(0, -12), (3, -6), (12, -10), (13, 2), (7, 12), (2, 8), (0, 12), (-2, 8), (-7, 12), (-13, 2), (-12, -10), (-3, -6)])
+
 
 def draw_icon_extra(p, kind, col):
-    """أيقونات الأسلحة والترقيات والمركبات والمظاهر الجديدة."""
     if kind == "bundle":
         p.rect(-11, -4, 22, 15, (150, 90, 40), WHITE, 1.2)
         p.rect(-11, -10, 22, 7, (200, 130, 60), WHITE, 1.2)
@@ -1648,6 +1738,71 @@ def draw_icon_extra(p, kind, col):
         p.circ(0, 0, 9, (6, 2, 14), col, 2.5)
         for a in (0.3, 2.4, 4.5):
             p.line((math.cos(a) * 9, math.sin(a) * 9), (math.cos(a + 0.9) * 14, math.sin(a + 0.9) * 14), col, 2)
+        return
+    if kind == "w_twin":
+        for x in (-6, 6):
+            p.rect(x - 2, -10, 4, 20, col, WHITE, 1)
+            p.poly([(x - 2, -10), (x + 2, -10), (x, -15)], WHITE, BLACK, 1)
+        return
+    if kind == "w_inferno":
+        p.poly([(0, -14), (8, -2), (10, 8), (0, 14), (-10, 8), (-8, -2)], col, (140, 40, 10), 1.2)
+        p.poly([(0, -4), (5, 4), (0, 11), (-5, 4)], (255, 230, 110))
+        return
+    if kind == "w_cryo":
+        for a in (0, 1.047, 2.094):
+            p.line((math.cos(a) * 12, math.sin(a) * 12), (-math.cos(a) * 12, -math.sin(a) * 12), col, 2.5)
+        p.circ(0, 0, 3.5, WHITE)
+        return
+    if kind == "w_railgun":
+        p.line((0, -14), (0, 14), WHITE, 2.5)
+        p.circ(0, -5, 6, (10, 20, 40), col, 1.5)
+        p.circ(0, 5, 6, (10, 20, 40), col, 1.5)
+        return
+    if kind == "w_swarm":
+        for x in (-8, 0, 8):
+            p.ell(x, 3, 2.6, 8, (220, 220, 230), BLACK, 1)
+            p.poly([(x, -8), (x - 2.6, -3), (x + 2.6, -3)], (255, 90, 70))
+        return
+    if kind == "w_ripper":
+        pts = [(math.cos(i * TAU / 16) * (13 if i % 2 == 0 else 8), math.sin(i * TAU / 16) * (13 if i % 2 == 0 else 8)) for i in range(16)]
+        p.poly(pts, col, WHITE, 1.2)
+        p.circ(0, 0, 4, (10, 20, 40))
+        return
+    if kind == "w_novaring":
+        for i in range(8):
+            a = i * TAU / 8
+            p.circ(math.cos(a) * 10, math.sin(a) * 10, 2.8, col, WHITE, 1)
+        p.circ(0, 0, 3.5, WHITE)
+        return
+    if kind == "crit":
+        p.circ(0, 0, 10, (10, 20, 40), col, 1.8)
+        p.line((0, -14), (0, 14), col, 2)
+        p.line((-14, 0), (14, 0), col, 2)
+        p.circ(0, 0, 2.5, WHITE)
+        return
+    if kind == "slayer":
+        p.poly([(0, -14), (3.5, 4), (-3.5, 4)], WHITE, BLACK, 1)
+        p.rect(-8, 4, 16, 3.5, col, BLACK, 1)
+        p.rect(-2, 7, 4, 7, col, BLACK, 1)
+        return
+    if kind == "xpup":
+        pts = [(math.cos(i * TAU / 10 - math.pi / 2) * (13 if i % 2 == 0 else 5.5),
+                math.sin(i * TAU / 10 - math.pi / 2) * (13 if i % 2 == 0 else 5.5)) for i in range(10)]
+        p.poly(pts, col, WHITE, 1.2)
+        return
+    if kind == "ad":
+        p.rect(-12, -9, 24, 16, (20, 30, 60), col, 1.6)
+        p.poly([(-3, -5), (6, -1), (-3, 3)], col)
+        p.rect(-5, 9, 10, 3, col)
+        return
+    if kind == "code":
+        p.rect(-13, -7, 26, 14, col, WHITE, 1.2)
+        for i in range(3):
+            p.line((-8, -3 + i * 3.5), (8, -3 + i * 3.5), (90, 60, 10), 1.4)
+        return
+    if kind == "vip":
+        p.poly([(-11, 8), (-11, -6), (-5, 0), (0, -10), (5, 0), (11, -6), (11, 8)], col, WHITE, 1.2)
+        p.rect(-11, 8, 22, 3, shade(col, 0.7), WHITE, 1)
         return
     if kind.startswith("skin_"):
         p.poly(SHIP_ICON_PTS["vanguard"], col, WHITE, 1.2)
@@ -1703,19 +1858,22 @@ def draw_icon_extra(p, kind, col):
         p.poly(SHIP_ICON_PTS[kind[5:]], col, WHITE, 1.2)
         p.circ(0, 2, 2.5, WHITE)
 
+
 _icon_cache = {}
 
-# يجلب الأيقونة من الذاكرة المؤقتة (يرسمها مرة واحدة فقط)
+
 def get_icon(kind, size):
     key = (kind, size)
     if key not in _icon_cache:
         _icon_cache[key] = make_sprite(size, size, draw_icon, kind, scale=size / 48.0)
     return _icon_cache[key]
 
+
 def draw_heart_small(p, col):
     p.circ(-5, -3, 6, col, BLACK, 1)
     p.circ(5, -3, 6, col, BLACK, 1)
     p.poly([(-10.5, 0), (10.5, 0), (0, 11)], col, BLACK, 1)
+
 
 def draw_missile_sprite(p):
     p.ell(0, 0, 3.5, 11, (210, 214, 224), BLACK, 1)
@@ -1723,8 +1881,8 @@ def draw_missile_sprite(p):
     p.poly([(-3, 4), (-8, 12), (-3, 10)], (255, 150, 60), BLACK, 1)
     p.poly([(3, 4), (8, 12), (3, 10)], (255, 150, 60), BLACK, 1)
 
+
 # ================= الخلفية الكونية =================
-# ثيمات الخلفية الكونية: كل 10 مراحل ثيم جديد (ألوان سديم وكواكب)
 THEMES = [
     dict(name="ORION VEIL", c1=(150, 50, 200), c2=(40, 110, 230), planet=((200, 120, 70), (120, 60, 40)), planet2=((120, 160, 220), (50, 70, 130))),
     dict(name="EMERALD DRIFT", c1=(30, 190, 120), c2=(30, 110, 200), planet=((90, 170, 110), (30, 90, 70)), planet2=((220, 200, 120), (130, 100, 60))),
@@ -1736,7 +1894,7 @@ THEMES = [
     dict(name="TOXIC MIST", c1=(150, 230, 50), c2=(40, 170, 130), planet=((170, 210, 90), (60, 100, 50)), planet2=((200, 130, 220), (100, 60, 130))),
 ]
 
-# عينة ضجيج سلسة (value noise) بتكرار دوري حتى لا يظهر خط فاصل أثناء التمرير
+
 def _smp(g, cx, cy, u, v):
     x0 = int(u)
     y0 = int(v)
@@ -1754,7 +1912,7 @@ def _smp(g, cx, cy, u, v):
     d = g[y1][x1]
     return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy
 
-# يولّد السديم الملون بضجيج متعدد الطبقات بدقة منخفضة ثم يكبّره بنعومة
+
 def make_nebula(theme, seed):
     rng = random.Random(seed)
     NW, NH = 100, 78
@@ -1795,7 +1953,7 @@ def make_nebula(theme, seed):
             surf.set_at((x, y), (min(255, int(r)), min(255, int(gg)), min(255, int(b))))
     return pygame.transform.smoothscale(surf, (WIDTH, HEIGHT))
 
-# يرسم كوكباً بإضاءة واقعية (إضاءة لامبرت + هالة جوية + حلقات اختيارية)
+
 def make_planet(r, c1, c2, seed, ring=False, bands=True):
     rng = random.Random(seed)
     ph = [rng.uniform(0, 6.28) for _ in range(4)]
@@ -1840,7 +1998,7 @@ def make_planet(r, c1, c2, seed, ring=False, bands=True):
         s.set_clip(None)
     return s
 
-# تعتيم خفيف على الأطراف لعمق سينمائي
+
 def make_vignette():
     sm = pygame.Surface((32, 24), pygame.SRCALPHA)
     for y in range(24):
@@ -1851,18 +2009,18 @@ def make_vignette():
             sm.set_at((x, y), (0, 0, 8, clamp(int((d - 0.6) * 200), 0, 170)))
     return pygame.transform.smoothscale(sm, (WIDTH, HEIGHT))
 
+
 def draw_far_ship(p, col, kind, seed):
-    """سفينة حربية بعيدة (ظل مظلم بأضواء صغيرة) لخلفية المعركة."""
     rng = random.Random(seed)
     hi = shade(col, 1.8)
-    if kind == 0:  # مدمرة
+    if kind == 0:
         p.gpoly([(0, -60), (-14, -30), (-18, 30), (-10, 58), (10, 58), (18, 30), (14, -30)], hi, col, BLACK, 2)
         p.rect(-28, -8, 9, 36, shade(col, 0.7), BLACK, 1, mirror=True)
-    elif kind == 1:  # حاملة طائرات
+    elif kind == 1:
         p.gpoly([(-40, -40), (40, -40), (52, 0), (40, 50), (-40, 50), (-52, 0)], hi, col, BLACK, 2)
         for x in (-30, -10, 10, 30):
             p.rect(x - 4, -52, 8, 14, shade(col, 0.7), BLACK, 1)
-    else:  # طرّاد
+    else:
         p.gpoly([(0, -70), (-30, 10), (-36, 50), (-10, 36), (0, 56), (10, 36), (36, 50), (30, 10)], hi, col, BLACK, 2)
     for _ in range(14):
         p.circ(rng.uniform(-12, 12), rng.uniform(-30, 40), 0.9, (255, 220, 140))
@@ -1871,7 +2029,6 @@ def draw_far_ship(p, col, kind, seed):
 
 
 class WarLayer:
-    """معركة بعيدة في الخلفية: سفن حربية ضخمة وأشعة ليزر وانفجارات صامتة (أجواء عام 2500)."""
     def __init__(self):
         self.ships = [self._new(True) for _ in range(6)]
         self.lasers = []
@@ -1915,7 +2072,6 @@ class WarLayer:
             add_glow(surf, x, y, 6 + (14 - life) * 2, shade(col, life / 14.0))
 
 
-# الخلفية الكونية: سديم، نجوم متلألئة بثلاث طبقات (بعيدة/متوسطة/قريبة)، كواكب، مذنبات
 class Space:
     def __init__(self):
         self.stars = []
@@ -1965,7 +2121,7 @@ class Space:
         self.t += 1
         self.boost = boost
         self.war.update(boost)
-        if self.bolt:  # صاعقة أيونية عابرة
+        if self.bolt:
             self.bolt[1] -= 1
             if self.bolt[1] <= 0:
                 self.bolt = None
@@ -2009,7 +2165,7 @@ class Space:
         for sx, sy, spd, sz, ph, col in self.stars:
             v = 0.65 + 0.35 * math.sin(tt * (1 + spd) + ph)
             c = (int(col[0] * v), int(col[1] * v), int(col[2] * v))
-            if self.boost > 1.8:  # سرعة الانتقال (warp): النجوم تتحول لخطوط
+            if self.boost > 1.8:
                 pygame.draw.line(surf, c, (sx, sy), (sx, sy - spd * self.boost * 7), sz)
                 continue
             if sz == 1:
@@ -2036,14 +2192,15 @@ class Space:
             add_glow(surf, pts[0][0], pts[0][1], 60, (80, 100, 220))
         surf.blit(self.vig, (0, 0))
 
+
 space = None
 
-# ================= الجسيمات والنصوص الطافية =================
+# ================= الجسيمات =================
 particles = []
 texts = []
 _smoke_cache = {}
 
-# جسيم: أساس الانفجارات (نار، شرر، دخان، حطام، موجة صدمة، وميض)
+
 class Particle:
     __slots__ = ("x", "y", "vx", "vy", "life", "max", "kind", "size", "col", "drag", "grow")
 
@@ -2086,7 +2243,7 @@ class Particle:
         elif k == "debris":
             pygame.draw.rect(s, shade(self.col, 0.4 + 0.6 * f), (x, y, int(self.size), int(self.size)))
 
-# انفجار واقعي: وميض + موجة صدمة + نار + شرر + دخان + حطام
+
 def explode(x, y, size=1.0, col=None):
     if len(particles) > 700:
         size = min(size, 0.6)
@@ -2109,7 +2266,7 @@ def explode(x, y, size=1.0, col=None):
             sp = random.uniform(0.3, 2)
             particles.append(Particle(x, y, math.cos(a) * sp, math.sin(a) * sp, random.randint(40, 70),
                                       "smoke", 12, GRAY, 0.96, 0.35))
-    for _ in range(int(2 + 3 * size)):  # جمرات طويلة العمر
+    for _ in range(int(2 + 3 * size)):
         a = random.uniform(0, TAU)
         sp = random.uniform(0.5, 3)
         particles.append(Particle(x, y, math.cos(a) * sp, math.sin(a) * sp - 0.6, random.randint(45, 85),
@@ -2123,6 +2280,7 @@ def explode(x, y, size=1.0, col=None):
         particles.append(Particle(x, y, math.cos(a) * sp, math.sin(a) * sp, random.randint(25, 50),
                                   "debris", random.randint(2, 5), dc, 0.96))
 
+
 def spark(x, y, col, n=5):
     for _ in range(n):
         a = random.uniform(0, TAU)
@@ -2130,10 +2288,11 @@ def spark(x, y, col, n=5):
         particles.append(Particle(x, y, math.cos(a) * sp, math.sin(a) * sp, random.randint(8, 16),
                                   "spark", 2, col, 0.9))
 
+
 # ================= الرصاص =================
 MISSILE_SPR = None
 
-# يرسم رصاصة على شكل كبسولة مضيئة
+
 def capsule(s, x, y, ux, uy, half, w, col, core):
     a = (x - ux * half, y - uy * half)
     b = (x + ux * half, y + uy * half)
@@ -2142,9 +2301,8 @@ def capsule(s, x, y, ux, uy, half, w, col, core):
     pygame.draw.circle(s, col, (int(b[0]), int(b[1])), w // 2)
     pygame.draw.line(s, core, a, b, max(1, w // 3))
 
-# الرصاصة (للاعب أو للعدو): الحركة، التوجيه، الانفجار عند انتهاء العمر، والرسم حسب النوع
+
 class Bullet:
-    """رصاصة (للاعب أو للعدو). kind يحدد الشكل. seek = تلاحق اللاعب، life = عمرها بالإطارات."""
     def __init__(self, x, y, vx, vy, dmg, kind, friendly, r=5, pierce=0, homing=False, col=None, seek=False, life=None):
         self.x, self.y, self.vx, self.vy = x, y, vx, vy
         self.dmg, self.kind, self.friendly, self.r = dmg, kind, friendly, r
@@ -2157,7 +2315,6 @@ class Bullet:
 
     def update(self, g):
         self.age += 1
-        # انتهاء العمر: الألغام والقذائف المتشظية تنفجر
         if self.life is not None and self.age >= self.life:
             self.dead = True
             if self.kind == "mine":
@@ -2167,7 +2324,6 @@ class Bullet:
             elif self.kind == "hole":
                 g.hole_burst(self)
             return
-        # رصاص العدو الملاحق: يدور ببطء نحو أقرب لاعب
         if self.seek:
             des = g.aim(self.x, self.y)
             cur = math.atan2(self.vy, self.vx)
@@ -2176,7 +2332,6 @@ class Bullet:
             sp = math.hypot(self.vx, self.vy)
             self.vx = math.cos(cur) * sp
             self.vy = math.sin(cur) * sp
-        # صواريخ اللاعب الموجهة نحو أقرب هدف
         if self.homing:
             tgt = g.nearest_target(self.x, self.y)
             if tgt is not None:
@@ -2240,6 +2395,32 @@ class Bullet:
             add_glow(s, x - ux * 10, y - uy * 10, 12, (90, 40, 160))
             pygame.draw.circle(s, (210, 150, 255), (int(x), int(y)), 6)
             pygame.draw.circle(s, WHITE, (int(x), int(y)), 3)
+        elif k == "fire":
+            f = clamp(self.age / float(self.life or 20), 0.0, 1.0)
+            add_glow(s, x, y, int(12 + 16 * f), (210, 80, 10))
+            pygame.draw.circle(s, (255, int(200 - 110 * f), 40), (int(x), int(y)), int(4 + 6 * f))
+            pygame.draw.circle(s, (255, 245, 170), (int(x), int(y)), max(1, int(3 - 2 * f)))
+        elif k == "cryo":
+            add_glow(s, x, y, 24, (60, 150, 230))
+            pygame.draw.circle(s, (130, 205, 255), (int(x), int(y)), 8)
+            pygame.draw.circle(s, WHITE, (int(x), int(y)), 4)
+            for i in range(4):
+                a = self.age * 0.2 + i * 1.57
+                pygame.draw.line(s, (200, 240, 255), (x, y), (x + math.cos(a) * 13, y + math.sin(a) * 13), 2)
+        elif k == "rail":
+            add_glow(s, x, y, 30, (60, 220, 255))
+            pygame.draw.line(s, (60, 220, 255), (x - ux * 110, y - uy * 110), (x + ux * 16, y + uy * 16), 8)
+            pygame.draw.line(s, WHITE, (x - ux * 110, y - uy * 110), (x + ux * 16, y + uy * 16), 3)
+        elif k == "saw":
+            add_glow(s, x, y, 30, (150, 160, 190))
+            pts = []
+            for i in range(16):
+                a = self.age * 0.5 + i * TAU / 16
+                rr = 17 if i % 2 == 0 else 10
+                pts.append((x + math.cos(a) * rr, y + math.sin(a) * rr))
+            pygame.draw.polygon(s, (205, 210, 225), pts)
+            pygame.draw.polygon(s, (70, 76, 96), pts, 2)
+            pygame.draw.circle(s, (40, 44, 60), (int(x), int(y)), 5)
         elif k == "hole":
             pul = 1 + 0.1 * math.sin(self.age * 0.4)
             add_glow(s, x, y, int(70 * pul), (80, 30, 150))
@@ -2273,12 +2454,12 @@ class Bullet:
             pygame.draw.circle(s, (50, 52, 66), (int(x), int(y)), 9)
             pygame.draw.circle(s, mix(self.col, WHITE, 0.4 * pul), (int(x), int(y)), 4)
 
+
 # ================= الجوائز =================
-# احتمالات سقوط الجوائز (الرقم الأكبر = أكثر شيوعاً)
 PICK_WEIGHTS = [("coin", 34), ("health", 10), ("shield", 8), ("special", 10), ("gem", 6),
                 ("power", 8), ("rapid", 8), ("triple", 7), ("bomb", 4), ("magnet", 5)]
 
-# جائزة تسقط من العدو، لكل نوع شكل خاص، والمغناطيس يجذبها نحوك
+
 class Pickup:
     def __init__(self, x, y, kind):
         self.x, self.y, self.kind = x, y, kind
@@ -2292,12 +2473,19 @@ class Pickup:
         self.vx *= 0.97
         self.y += 1.6
         for p in g.players:
-            if p.alive and p.buffs["magnet"] > 0:
-                dx, dy = p.x - self.x, p.y - self.y
-                d = math.hypot(dx, dy)
-                if d < 380 and d > 1:
-                    self.x += dx / d * 5.5
-                    self.y += dy / d * 5.5
+            if not p.alive:
+                continue
+            if p.buffs["magnet"] > 0:
+                rr = 380
+            elif save["magnet_lv"]:
+                rr = 60 + 45 * save["magnet_lv"]
+            else:
+                continue
+            dx, dy = p.x - self.x, p.y - self.y
+            d = math.hypot(dx, dy)
+            if 1 < d < rr:
+                self.x += dx / d * 5.5
+                self.y += dy / d * 5.5
         if g.clear_timer > 0:
             for p in g.players:
                 if p.alive:
@@ -2315,35 +2503,34 @@ class Pickup:
         spr = get_icon(self.kind, 48)
         s.blit(spr, spr.get_rect(center=(int(self.x), int(self.y + math.sin(self.t * 0.1) * 2))))
 
+
 # ================= اللاعب =================
 PLAYER_SPR = {}
 DRONE_SPR = None
-# لون وميض فوهة كل سلاح
 WEAPON_COL = dict(laser=(60, 200, 255), spread=(255, 190, 60), rapid=(255, 70, 170), plasma=(190, 110, 255),
                   missile=(255, 150, 60), flak=(255, 150, 60), tesla=(120, 200, 255), lance=(90, 190, 255),
-                  photon=(190, 110, 255), singularity=(150, 90, 230))
+                  photon=(190, 110, 255), singularity=(150, 90, 230), twin=(90, 220, 255),
+                  inferno=(255, 130, 40), cryo=(150, 220, 255), railgun=(120, 255, 255),
+                  swarm=(255, 170, 80), ripper=(210, 215, 230), novaring=(255, 120, 230))
 
 
 def get_player_sprite(pid, ship, tier, skin):
-    """صورة المركبة: تُرسم عند أول طلب ثم تُخزَّن (المفتاح يشمل المظهر)."""
     key = (pid, ship, tier, skin)
     if key not in PLAYER_SPR:
         pal = skin_pal(SHIP_DEFS[ship]["pals"][pid], skin)
         PLAYER_SPR[key] = make_sprite(190, 170, SHIP_DRAW[ship], pal, tier)
     return PLAYER_SPR[key]
 
-# أنواع التعزيزات المؤقتة التي تظهر في الواجهة
+
 BUFF_KINDS = ("power", "rapid", "triple", "magnet", "shield")
 
-# اللاعب: الحركة والإطلاق والدرع والطائرات المرافقة والإحياء
+
 class Player:
-    """مركبة اللاعب: حركة، إطلاق نار، درع، طائرات مرافقة، إحياء."""
     def __init__(self, pid):
         self.pid = pid
         self.reset_full(WIDTH // 2)
 
     def stats(self):
-        """يحسب قدرات المركبة من المركبة المختارة وترقيات المتجر."""
         sd = SHIP_DEFS[save["ship"]]
         self.speed = sd["speed"] + 0.5 * save["speed_lv"]
         self.max_health = max(2, save["max_health"] + sd["hp"])
@@ -2351,11 +2538,9 @@ class Player:
         self.max_special = save["max_special"]
 
     def dmg_base(self):
-        """الضرر الأساسي = قوة السلاح × مضاعف المركبة."""
         return (1 + 0.5 * (save["power"] - 1)) * SHIP_DEFS[save["ship"]]["dmg"]
 
     def drone_pos(self, i):
-        """مكان الطائرة المرافقة رقم i حول المركبة."""
         ox = (-62, 62, 0)[i]
         oy = (22, 22, -92)[i]
         return self.x + ox, self.y + oy + math.sin((self.drone_t + i * 20) * 0.08) * 5
@@ -2422,7 +2607,6 @@ class Player:
         for k in BUFF_KINDS:
             if self.buffs[k] > 0:
                 self.buffs[k] -= 1
-        # الدرع: يستهلك طاقة وهو مفعّل ويتجدد وهو مغلق (التجدد يتحسن من المتجر)
         if self.shield_on:
             self.shield -= 0.35
             if self.shield <= 0:
@@ -2430,7 +2614,6 @@ class Player:
                 self.shield_on = False
         else:
             self.shield = min(self.shield_max, self.shield + 0.1 + 0.05 * save["regen_lv"])
-        # الطائرات المرافقة تطلق رصاصاً صغيراً تلقائياً
         self.drone_t += 1
         for i in range(save["drones"]):
             if (self.drone_t + i * 9) % 28 == 0:
@@ -2446,6 +2629,8 @@ class Player:
         pw = save["power"]
         dmg = self.dmg_base()
         if self.buffs["power"] > 0:
+            dmg *= 2
+        if save["crit_lv"] and random.random() < 0.04 * save["crit_lv"]:
             dmg *= 2
         x, y = self.x, self.y - 60
         P = g.pb
@@ -2477,7 +2662,6 @@ class Player:
                 P.append(Bullet(x + off * 12, y + 15, off * 1.6, -7, dmg * 2.2, "missile", True, 7, homing=True))
             cool = 26
         elif w == "flak":
-            # قذيفة تنفجر بعد قليل إلى شظايا
             n = 1 + (pw >= 15)
             for i in range(n):
                 P.append(Bullet(x + (i - (n - 1) / 2) * 20, y, 0, -9, dmg * 1.2, "flak", True, 8, life=26))
@@ -2486,26 +2670,61 @@ class Player:
             g.tesla(self, dmg)
             cool = 20
         elif w == "lance":
-            # رمح ضوئي سريع يخترق كل شيء
             P.append(Bullet(x, y - 10, 0, -22, dmg * 4.0, "lance", True, 6, pierce=99))
             cool = 34
         elif w == "photon":
-            # ثلاث كرات فوتونية تلاحق الأهداف
             for i in range(3):
                 a = -math.pi / 2 + (i - 1) * 0.18
                 P.append(Bullet(x, y + 8, math.cos(a) * 9, math.sin(a) * 9, dmg * 1.4, "photon", True, 6, pierce=1, homing=True))
             cool = 16
         elif w == "singularity":
-            # ثقب أسود صغير يسحب الأعداء ويؤذيهم ثم ينفجر
             P.append(Bullet(x, y - 10, 0, -4.5, dmg * 0.6, "hole", True, 16, pierce=999, life=110))
             cool = 70
+        # ---------- أسلحة جديدة ----------
+        elif w == "twin":
+            for sx in (-14, 14):
+                P.append(Bullet(x + sx, y + 8, 0, -14, dmg * 0.7, "laser", True, 5))
+            if pw >= 10:
+                for a in (-0.14, 0.14):
+                    P.append(Bullet(x, y + 8, math.sin(a) * 14, -math.cos(a) * 14, dmg * 0.5, "laser", True, 5))
+            cool = 10
+        elif w == "inferno":
+            for _ in range(2):
+                a = -math.pi / 2 + random.uniform(-0.22, 0.22)
+                sp = random.uniform(8, 11)
+                P.append(Bullet(x + random.uniform(-8, 8), y + 10, math.cos(a) * sp, math.sin(a) * sp,
+                                dmg * 0.38, "fire", True, 9, pierce=2, life=20))
+            cool = 4
+        elif w == "cryo":
+            n = 1 + (pw >= 12) + (pw >= 24)
+            for i in range(n):
+                P.append(Bullet(x + (i - (n - 1) / 2) * 18, y, 0, -10, dmg * 0.9, "cryo", True, 8, pierce=1))
+            cool = 18
+        elif w == "railgun":
+            P.append(Bullet(x, y - 10, 0, -38, dmg * 5.5, "rail", True, 7, pierce=99))
+            cool = 46
+        elif w == "swarm":
+            n = 4 + 2 * (pw >= 15)
+            for i in range(n):
+                a = -math.pi / 2 + (i - (n - 1) / 2) * 0.35
+                P.append(Bullet(x, y + 12, math.cos(a) * 5, math.sin(a) * 5, dmg * 0.8, "missile", True, 6, homing=True))
+            cool = 30
+        elif w == "ripper":
+            P.append(Bullet(x, y - 5, 0, -7, dmg * 2.0, "saw", True, 14, pierce=6))
+            cool = 24
+        elif w == "novaring":
+            n = 14 + 2 * min(5, pw // 6)
+            for i in range(n):
+                a = i * TAU / n
+                P.append(Bullet(x, y + 40, math.cos(a) * 8, math.sin(a) * 8, dmg * 0.7, "spread", True, 5, life=44))
+            cool = 40
         if self.buffs["triple"] > 0:
             for a in (-0.3, 0.3):
                 P.append(Bullet(x, y + 12, math.sin(a) * 12, -math.cos(a) * 12, dmg * 0.6, "laser", True, 5))
         particles.append(Particle(self.x, self.y - 64, 0, 0, 4, "flash", 20, WEAPON_COL.get(w, (120, 200, 255))))
         mult = (0.5 if self.buffs["rapid"] > 0 else 1.0) * SHIP_DEFS[save["ship"]]["cool"] * (1 - 0.04 * save["firerate_lv"])
         self.cool = max(2, int(cool * mult))
-        sfx(w, 45)
+        sfx(SND_ALIAS.get(w, w), 45)
 
     def special(self, g):
         if not self.alive or self.specials <= 0:
@@ -2548,7 +2767,6 @@ class Player:
         sfx("hurt", 80)
         explode(self.x, self.y, 0.6)
         if self.health <= 0:
-            # رمز الإحياء من المتجر: يعيدك للحياة مرة واحدة
             if save["revives"] > 0:
                 save["revives"] -= 1
                 write_save()
@@ -2580,7 +2798,7 @@ class Player:
             engines += [(-80, 3, 22), (80, 3, 22)]
         for ox, w, L in engines:
             draw_flame(s, self.x + ox, self.y + 58 + (-4 if abs(ox) > 20 else 0) + (6 if abs(ox) > 70 else 0), w, L, fl, anim + ox)
-        if anim % 2 == 0:  # أثر المحرك المتلاشي
+        if anim % 2 == 0:
             particles.append(Particle(self.x + random.choice((-9, 9)), self.y + 70, random.uniform(-0.3, 0.3),
                                       random.uniform(1.5, 3), 16, "fire", 6, fl, 0.94))
         spr = get_player_sprite(self.pid, ship, tier, save["skin"])
@@ -2590,7 +2808,6 @@ class Player:
             add_glow(s, px, py, 20, (0, 100, 150))
             s.blit(DRONE_SPR, DRONE_SPR.get_rect(center=(int(px), int(py))))
         if self.shield_on and self.shield > 0 or self.buffs["shield"] > 0:
-            # فقاعة درع هولوغرافية: توهج + حلقة + أقواس دوّارة
             add_glow(s, self.x, self.y, 78, (20, 90, 180))
             pygame.draw.circle(s, (90, 190, 255), (int(self.x), int(self.y)), 62, 1)
             rect = pygame.Rect(int(self.x) - 60, int(self.y) - 60, 120, 120)
@@ -2598,12 +2815,13 @@ class Player:
                 a0 = anim * 0.08 + i * 2.094
                 pygame.draw.arc(s, (170, 235, 255), rect, a0, a0 + 0.9, 3)
 
+
 # ================= الأعداء والكويكبات =================
 ENEMY_SPR = {}
 DIFF_HP = (0.8, 1.0, 1.35)
 DIFF_BUL = (0.85, 1.0, 1.15)
 
-# العدو: يتحرك حسب نوعه ويطلق النار، ويمكن أن يكون «نخبة» أقوى بـ 3-6 أضعاف
+
 class Enemy:
     def __init__(self, typ, x, y, level):
         d = ENEMY_DEFS[typ]
@@ -2619,12 +2837,19 @@ class Enemy:
         self.dir = random.choice((-1, 1))
         self.fire = random.randint(40, 120)
         self.flash = 0
+        self.slow = 0
         self.spr = ENEMY_SPR[typ]
         self.dead = False
         self.elite = False
 
     def update(self, g):
         d = ENEMY_DEFS[self.typ]
+        # تأثير التجميد (سلاح CRYO) يبطئ العدو
+        if self.slow > 0:
+            self.slow -= 1
+            self.speed = d["speed"] * 0.4
+        else:
+            self.speed = d["speed"]
         self.t += 1
         if d["hold"]:
             if self.y < self.hold_y:
@@ -2673,15 +2898,18 @@ class Enemy:
             draw_flame(s, self.x + ox, self.y - h * 0.42, 4, 20, (255, 120, 40), anim + ox, up=True)
         if self.elite:
             add_glow(s, self.x, self.y, int(self.r * 2.2 + 4 * math.sin(anim * 0.15)), (150, 110, 20))
+        if self.slow > 0:
+            add_glow(s, self.x, self.y, int(self.r * 1.6), (40, 100, 170))
         s.blit(spr, spr.get_rect(center=(int(self.x), int(self.y))))
         if self.elite or (self.max > 6 and self.hp < self.max):
             w = 44
             pygame.draw.rect(s, RED_DARK, (self.x - w // 2, self.y - self.r - 12, w, 4))
             pygame.draw.rect(s, RED_LIGHT, (self.x - w // 2, self.y - self.r - 12, int(w * max(0, self.hp) / self.max), 4))
 
+
 ROCK_SPR = []
 
-# يرسم صخرة كويكب غير منتظمة بفوّهات
+
 def draw_rock(p, seed):
     rng = random.Random(seed)
     n = 11
@@ -2698,7 +2926,7 @@ def draw_rock(p, seed):
         p.circ(cx, cy, rr, (74, 66, 62), (46, 40, 38), 1)
         p.circ(cx - 1, cy - 1, rr * 0.4, (150, 138, 128))
 
-# كويكب: عائق يتدحرج، يؤذيك إن اصطدمت به، ويمكن تدميره (يسقط عملات أحياناً)
+
 class Asteroid:
     def __init__(self, level):
         self.r = random.randint(18, 42)
@@ -2730,11 +2958,10 @@ class Asteroid:
         img = pygame.transform.rotozoom(spr, self.rot, self.r / 38.0)
         s.blit(img, img.get_rect(center=(int(self.x), int(self.y))))
 
+
 # ================= الزعيم =================
-# أنماط إطلاق الزعماء العامة وفواصلها الزمنية
 ALL_PATTERNS = ["fan", "aimed", "spiral", "ring", "rain", "wall"]
 PAT_INTERVAL = dict(fan=55, aimed=40, spiral=5, ring=80, rain=7, wall=110)
-# اسم كل تصميم، وصف قدرته، أنماط إطلاقه، معامل حياته وسرعة حركته
 BOSS_TITLES = ["WARLORD", "OVERMIND", "HIVE QUEEN", "BASTION", "SPECTER", "GEMINI", "MINELAYER", "VOID EYE"]
 BOSS_ABILITY = ["CHARGE DASH", "SHIELD + SUMMON", "BEE SWARMS", "DEATH LASER",
                 "TELEPORT + HOMING", "TWIN CROSSFIRE", "MINEFIELD", "GRAVITY WELL"]
@@ -2744,8 +2971,8 @@ DESIGN_PATTERNS = {0: ["aimed", "fan", "wall"], 1: ["spiral", "ring", "aimed"], 
 BOSS_HP = [1.0, 1.0, 0.95, 1.2, 0.9, 1.1, 1.3, 1.0]
 BOSS_SPD = [1.0, 0.9, 1.6, 0.4, 1.0, 1.1, 0.6, 0.8]
 
+
 class Boss:
-    """الزعيم: 8 تصاميم، لكل تصميم قدرة خاصة (اندفاع/درع/أسراب/ليزر/انتقال/نيران متقاطعة/ألغام/جاذبية)."""
     def __init__(self, level):
         k = level // BOSS_EVERY
         self.k = k
@@ -2774,16 +3001,14 @@ class Boss:
         self.dead = False
         self.minion_t = 400
         self.col = self.pal["eye"]
-        # حالات القدرات الخاصة
         self.state = "idle"
         self.st_t = 0
         self.ab_t = 0
-        self.shielded = 0   # مؤقت الدرع (العقل المدبر)
-        self.vis = 255      # الشفافية (الشبح)
-        self.beam = None    # [x, t] الليزر القاتل (الحصن)
+        self.shielded = 0
+        self.vis = 255
+        self.beam = None
 
     def hittable(self):
-        """هل يمكن إصابة الزعيم الآن؟ (لا يمكن أثناء الموت أو الاختفاء)"""
         return not self.dying and self.vis > 150 and self.y > -80
 
     def take(self, dmg):
@@ -2792,6 +3017,7 @@ class Boss:
         if self.shielded > 0 or self.vis < 255:
             spark(self.x + random.uniform(-60, 60), self.y + random.uniform(-40, 40), (120, 200, 255), 2)
             return
+        dmg *= 1 + 0.06 * save["slayer_lv"]
         self.hp -= dmg
         self.flash = 3
         if self.hp <= 0:
@@ -2832,11 +3058,10 @@ class Boss:
             self.cool = max(3, int(PAT_INTERVAL[pat] * enr * (1.5 - 0.5 * g.ease()) / (1 + self.k * 0.01)))
 
     def ability(self, g):
-        """القدرة الخاصة لكل تصميم."""
         d = self.design
         self.ab_t += 1
         t = self.ab_t
-        if d == 0:  # القائد: يشحن ثم يندفع نحو الأسفل ثم يعود
+        if d == 0:
             if self.state == "idle" and t % 420 == 300:
                 self.state, self.st_t = "charge", 40
                 sfx("roar", 200)
@@ -2856,7 +3081,7 @@ class Boss:
                 if self.y <= self.target_y:
                     self.y = self.target_y
                     self.state = "idle"
-        elif d == 1:  # العقل المدبر: درع غير قابل للإصابة + استدعاء أتباع (اقتلهم لكسر الدرع)
+        elif d == 1:
             if self.shielded > 0:
                 self.shielded -= 1
                 if not g.enemies and self.shielded < 200:
@@ -2867,11 +3092,11 @@ class Boss:
                 sfx("roar", 200)
                 g.spawn_group("fighter", limit=3)
                 g.spawn_group("scout", limit=3)
-        elif d == 2:  # ملكة الخلية: أسراب نحل
+        elif d == 2:
             if t % 300 == 150 and len(g.enemies) < 8:
                 g.spawn_group("bee", limit=4)
                 sfx("roar", 200)
-        elif d == 3:  # الحصن: ليزر قاتل (تحذير ثم شعاع عمودي)
+        elif d == 3:
             if self.beam is None:
                 if t % 540 == 240:
                     self.beam = [self.x, 0]
@@ -2886,7 +3111,7 @@ class Boss:
                     sfx("beam", 100)
                 if self.beam[1] >= 150:
                     self.beam = None
-        elif d == 4:  # الشبح: يختفي وينتقل ثم يطلق رصاصاً يلاحق اللاعب
+        elif d == 4:
             if self.state == "idle" and t % 360 == 300:
                 self.state, self.st_t = "fade", 20
                 sfx("teleport")
@@ -2908,7 +3133,7 @@ class Boss:
                     for o in (-0.3, 0, 0.3):
                         g.ebullet(self.x, self.y + 40, a + o, 3.2 * g.bspeed(), "orb", self.col, seek=True, life=260)
                     sfx("enemy_fire", 80, 0.8)
-        elif d == 5:  # التوأم: قرنان يطلقان نيراناً مصوّبة ثم متقاطعة
+        elif d == 5:
             sp = g.bspeed()
             if t % 90 == 45:
                 for sgn in (-1, 1):
@@ -2922,12 +3147,12 @@ class Boss:
                     g.ebullet(self.x - 82, self.y + 20, ang, 4.4 * sp, "needle", self.col)
                     g.ebullet(self.x + 82, self.y + 20, math.pi - ang, 4.4 * sp, "needle", self.col)
                 sfx("enemy_fire", 80, 0.8)
-        elif d == 6:  # الكسّار: يزرع ألغاماً تنفجر إلى حلقة رصاص
+        elif d == 6:
             if t % 120 == 60 and len(g.eb) < 380:
                 g.ebullet(self.x + random.uniform(-70, 70), self.y + 90, math.pi / 2 + random.uniform(-0.3, 0.3),
                           1.8, "mine", self.col, life=110)
                 sfx("mine", 60)
-        elif d == 7:  # عين الفراغ: تجذب اللاعبين نحوها نصف الوقت
+        elif d == 7:
             cyc = t % 480
             if cyc < 240:
                 if cyc % 25 == 0:
@@ -2938,7 +3163,6 @@ class Boss:
                         p.y += clamp((self.y + 60 - p.y) * 0.004, -1.5, 1.5)
 
     def fire(self, g, pat):
-        """أنماط الإطلاق العامة (مروحة، مصوّب، لولب، حلقة، مطر، جدار)."""
         sp = g.bspeed()
         mx, my = self.x, self.y + 65
         k = self.k
@@ -2977,7 +3201,7 @@ class Boss:
             return
         spr = flash_version(self.spr) if self.flash else self.spr
         h = spr.get_height()
-        if self.design not in (4, 7):  # الشبح وعين الفراغ بلا لهب محركات
+        if self.design not in (4, 7):
             for ox in (-55, 0, 55):
                 draw_flame(s, self.x + ox, self.y + h * 0.36, 9, 38, (255, 140, 50), anim + ox)
         pul = 0.7 + 0.3 * math.sin(self.t * 0.1)
@@ -2987,10 +3211,10 @@ class Boss:
         s.blit(spr, spr.get_rect(center=(int(self.x), int(self.y))))
         if self.vis < 255:
             spr.set_alpha(255)
-        if self.shielded > 0:  # فقاعة الدرع
+        if self.shielded > 0:
             add_glow(s, self.x, self.y, 130, (30, 90, 200))
             pygame.draw.circle(s, (120, 200, 255), (int(self.x), int(self.y)), 118, 3)
-        if self.beam:  # الليزر القاتل
+        if self.beam:
             bx, bt = self.beam
             top = self.y + 60
             if bt < 70:
@@ -3004,7 +3228,6 @@ class Boss:
                     add_glow(s, bx, yy, 70, (255, 60, 60))
 
 # ================= منطق اللعبة =================
-# اللعبة: تدير المرحلة والموجات والاصطدامات والرسم
 class Game:
     def __init__(self):
         self.players = []
@@ -3030,7 +3253,6 @@ class Game:
         self.rocks = []
         self.arcs = []
 
-    # بدء مرحلة: تصفير القوائم، تحديد عدد الأعداء (المراحل طويلة)، إنشاء اللاعبين، اختيار الخلفية
     def start_level(self, level, fresh=False):
         self.level = level
         self.reset_lists()
@@ -3070,7 +3292,6 @@ class Game:
         space.set_theme((level - 1) // BOSS_EVERY)
         set_music("calm")
 
-    # ---- دوال مساعدة ----
     def alive_players(self):
         return [p for p in self.players if p.alive]
 
@@ -3081,16 +3302,13 @@ class Game:
         p = min(al, key=lambda q: (q.x - x) ** 2 + (q.y - y) ** 2)
         return math.atan2(p.y - y, p.x - x)
 
-    # معامل تسهيل: 0 في المرحلة 1 ثم يزيد حتى 1 في المرحلة 31 (البدايات أسهل)
     def ease(self):
-        """0 at level 1 -> 1 at level 31: early levels are gentler."""
         return min(1.0, (self.level - 1) / 30.0)
 
     def bspeed(self):
         return DIFF_BUL[save["difficulty"]] * (1 + min(self.level, 300) / 500.0) * (0.72 + 0.28 * self.ease())
 
     def ebullet(self, x, y, ang, speed, kind="orb", col=None, seek=False, life=None):
-        """رصاصة عدو. seek = تلاحق اللاعب، life = عمرها (للألغام)."""
         if len(self.eb) > 450:
             return
         r = 10 if kind == "mine" else 5 if kind == "needle" else 7
@@ -3102,7 +3320,6 @@ class Game:
         return min(al, key=lambda q: (q.x - x) ** 2 + (q.y - y) ** 2) if al else None
 
     def tesla(self, p, dmg):
-        """سلاح تسلا: برق يقفز فوراً بين أقرب الأهداف أمام المركبة."""
         pool = [e for e in self.enemies if not e.dead] + [a for a in self.rocks if not a.dead]
         if self.boss and self.boss.hittable():
             pool.append(self.boss)
@@ -3141,7 +3358,6 @@ class Game:
                                (p.x + random.uniform(-30, 30), p.y - 230)], 5])
 
     def hole_tick(self, b):
-        """الثقب الأسود: يسحب الأعداء القريبة ويؤذيهم في كل إطار."""
         for e in self.enemies:
             if e.dead:
                 continue
@@ -3167,7 +3383,6 @@ class Game:
             particles.append(Particle(b.x, b.y, 0, 0, 20, "ring", 120, (160, 80, 255)))
 
     def hole_burst(self, b):
-        """انفجار الثقب الأسود في نهاية عمره: ضرر كبير في دائرة."""
         explode(b.x, b.y, 2.0, (150, 90, 230))
         sfx("boom_l", 40)
         self.shake = max(self.shake, 16)
@@ -3184,7 +3399,6 @@ class Game:
             self.boss.take(b.dmg * 6)
 
     def flak_burst(self, b):
-        """انفجار قذيفة الفلاك إلى 10 شظايا."""
         explode(b.x, b.y, 0.6)
         sfx("boom_s", 40)
         for i in range(10):
@@ -3192,14 +3406,12 @@ class Game:
             self.pb.append(Bullet(b.x, b.y, math.cos(a) * 9, math.sin(a) * 9, b.dmg * 0.6, "spread", True, 5, life=16))
 
     def mine_burst(self, b):
-        """انفجار لغم الزعيم إلى حلقة من الرصاص."""
         explode(b.x, b.y, 0.7)
         sfx("boom_s", 40)
         for i in range(10):
             self.ebullet(b.x, b.y, i * TAU / 10, 3.2 * self.bspeed(), "orb", b.col)
 
     def use_bomb(self):
-        """استخدام قنبلة من المخزون (مفتاح X)."""
         if save["bombs"] > 0 and self.alive_players():
             save["bombs"] -= 1
             self.bomb()
@@ -3230,7 +3442,6 @@ class Game:
                 kind = "coin"
         self.pickups.append(Pickup(x, y, kind))
 
-    # ---- ظهور الأعداء ----
     def pick_type(self):
         L = self.level
         pool = [("scout", 10)]
@@ -3315,7 +3526,6 @@ class Game:
             self.enemies.append(Enemy(typ, x, y, self.level))
         return n
 
-    # منطق الظهور: موجات الأعداء، النخبة، الكويكبات، ثم الزعيم في مراحل العاشرة
     def spawn(self):
         if self.spawned < self.goal:
             w = min(5, int(self.spawned * 5 / self.goal) + 1)
@@ -3360,8 +3570,6 @@ class Game:
                 self.boss.minion_t = 420
                 self.spawn_group(random.choice(["scout", "fighter", "bee"]))
 
-    # ---- الأحداث (قتل، التقاط، قنبلة) ----
-    # قتل عدو: انفجار، نقاط، عملات، وقد يسقط جائزة
     def kill_enemy(self, e):
         if e.dead:
             return
@@ -3382,7 +3590,7 @@ class Game:
             c = add_coins(c)
             self.earned += c
             texts.append([e.x, e.y - 20, "+%d" % c, GOLD, 40])
-        if random.random() < 0.13 + (0.05 if e.r >= 38 else 0) + (0.06 if self.level < 20 else 0):
+        if random.random() < 0.13 + (0.05 if e.r >= 38 else 0) + (0.06 if self.level < 20 else 0) + 0.01 * save["luck_lv"]:
             self.drop(e.x, e.y)
         self.kills += 1
         self.combo += 1
@@ -3391,7 +3599,6 @@ class Game:
             self.score += self.combo
         self.shake = max(self.shake, 3 + e.r // 10)
 
-    # التقاط جائزة وتطبيق أثرها (كل نوع له أثر مختلف)
     def collect(self, p, pk):
         k = pk.kind
         lvl = self.level
@@ -3435,7 +3642,6 @@ class Game:
         texts.append([pk.x, pk.y - 20, msg, ICON_COL[k], 55])
         spark(pk.x, pk.y, ICON_COL[k], 10)
 
-    # قنبلة: تؤذي كل الأعداء وتمسح رصاص العدو وتضر الزعيم قليلاً
     def bomb(self):
         self.flash = 22
         self.shake = 28
@@ -3453,8 +3659,6 @@ class Game:
             spark(b.x, b.y, (255, 200, 120), 2)
         particles.append(Particle(WIDTH / 2, HEIGHT / 2, 0, 0, 40, "ring", 700, (255, 180, 100)))
 
-    # ---- التحديث الرئيسي ----
-    # التحديث الرئيسي للعبة (يُستدعى 60 مرة بالثانية)
     def update(self):
         self.t += 1
         space.update(1.0 + (2.0 if self.clear_timer > 0 else 0.0))
@@ -3480,7 +3684,6 @@ class Game:
             if b.kind == "hole" and not b.dead:
                 self.hole_tick(b)
 
-        # اصطدام رصاص اللاعب بالأعداء والكويكبات والزعيم
         for b in self.pb:
             if b.dead:
                 continue
@@ -3492,6 +3695,8 @@ class Game:
                 if dx * dx + dy * dy < rr * rr:
                     e.hp -= b.dmg
                     e.flash = 3
+                    if b.kind == "cryo":
+                        e.slow = 110
                     b.hit.add(id(e))
                     spark(b.x, b.y, (255, 220, 140), 3)
                     sfx("hit", 50)
@@ -3533,7 +3738,6 @@ class Game:
                         b.pierce -= 1
                     else:
                         b.dead = True
-        # اصطدام رصاص وأجسام الأعداء بالاعبين وجمع الجوائز
         for p in self.players:
             if not p.alive:
                 continue
@@ -3580,7 +3784,6 @@ class Game:
                     pk.dead = True
                     self.collect(p, pk)
 
-        # تنظيف القوائم من العناصر الميتة
         self.pb = [b for b in self.pb if not b.dead and b.onscreen()]
         self.eb = [b for b in self.eb if not b.dead and b.onscreen()]
         self.enemies = [e for e in self.enemies if not e.dead and e.y < HEIGHT + 80]
@@ -3607,13 +3810,12 @@ class Game:
             self.combo_t -= 1
             if self.combo_t == 0:
                 self.combo = 0
-        if self.t % 100 == 0:  # إنذار انخفاض الصحة
+        if self.t % 100 == 0:
             for p in self.players:
                 if p.alive and p.health <= 1 and p.max_health >= 3:
                     sfx("alarm", 500)
                     break
 
-        # شروط نهاية المرحلة (موت أو فوز)
         if not self.alive_players():
             return "dead"
         if self.clear_timer > 0:
@@ -3630,7 +3832,6 @@ class Game:
                 self.clear_timer = 80
         return None
 
-    # موت الزعيم: انفجار ضخم + جوائز + مكافأة
     def boss_killed(self):
         b = self.boss
         explode(b.x, b.y, 3.2)
@@ -3648,8 +3849,6 @@ class Game:
         self.drop(b.x + 30, b.y, "health")
         self.boss = None
 
-    # ---- الرسم ----
-    # رسم المشهد كاملاً بالترتيب (خلفية ثم جوائز ثم أعداء ثم لاعب ثم رصاص ثم تأثيرات ثم الواجهة)
     def draw(self):
         space.draw(canvas)
         anim = self.t
@@ -3669,7 +3868,7 @@ class Game:
             b.draw(canvas)
         for pt in particles:
             pt.draw(canvas)
-        for pts, life in self.arcs:  # برق تسلا
+        for pts, life in self.arcs:
             for i in range(len(pts) - 1):
                 pygame.draw.line(canvas, (60, 120, 220), pts[i], pts[i + 1], 6)
                 pygame.draw.line(canvas, (150, 210, 255), pts[i], pts[i + 1], 3)
@@ -3686,7 +3885,6 @@ class Game:
         self.draw_fx()
 
     def draw_fx(self):
-        """مؤثرات الشاشة: وميض أحمر عند الإصابة، عداد الكومبو، شريطا مقدمة الزعيم."""
         if self.hurt_t > 0 and RED_VIG is not None:
             RED_VIG.set_alpha(int(13 * self.hurt_t))
             canvas.blit(RED_VIG, (0, 0))
@@ -3702,7 +3900,6 @@ class Game:
                 text(b.name, F_L, RED_LIGHT, WIDTH // 2, HEIGHT - 40, center=True)
                 text("ABILITY: " + BOSS_ABILITY[b.design], F_S, GOLD_LIGHT, WIDTH // 2, 30, center=True)
 
-    # واجهة اللعب: النتيجة، العملات، المرحلة، الموجة، شريط الزعيم وقدرته
     def draw_hud(self):
         panel(6, 4, 262, 58, (60, 120, 200))
         panel(WIDTH - 268, 4, 262, 58, (60, 120, 200))
@@ -3719,7 +3916,6 @@ class Game:
         text("[%s] WEAPON  [B] SHOP" % kname(save["binds"]["weapon"]), F_S, GRAY_L, WIDTH - 16, 30, right=True)
         text("[%s] BOMB x%d   REVIVE x%d" % (kname(save["binds"]["bomb"]), save["bombs"], save["revives"]),
              F_S, GRAY_L, WIDTH - 16, 48, right=True)
-        # اسم المرحلة وشريط التقدم
         sec = THEMES[((self.level - 1) // BOSS_EVERY) % len(THEMES)]["name"]
         text("LEVEL %d / %d" % (self.level, MAX_LEVEL), F_M, GOLD_LIGHT, WIDTH // 2, 16, center=True)
         text(sec, F_S, GRAY_L, WIDTH // 2, 38, center=True)
@@ -3752,7 +3948,6 @@ class Game:
         if self.clear_timer > 0:
             text("SECTOR CLEAR", F_XL, GREEN, WIDTH // 2, HEIGHT // 2 - 40, center=True)
 
-    # لوحة اللاعب: القلوب، شريط الدرع، السلاح الخاص، التعزيزات النشطة
     def draw_panel(self, p):
         x = 16 if p.pid == 0 else WIDTH - 16 - 250
         y = 66
@@ -3772,25 +3967,36 @@ class Game:
                 pygame.draw.rect(canvas, ICON_COL[k], (bx, y + 70, int(28 * p.buffs[k] / 700.0) + 1, 3))
                 bx += 32
 
+
 HEART_ON = HEART_OFF = None
 game = None
 
-# المتجر: 6 صفحات و43 عنصراً. العمود الأخير: "c" = عملات عادية، "g" = كريستال نوفا (عملة مميزة تُشحن)
-SHOP_PAGES = ["WEAPONS", "SHIPS", "UPGRADES", "EXTRAS", "PREMIUM", "STYLE", "BUNDLES"]
+# ================= المتجر =================
+# العمود الأخير: c = عملات، g = كريستال نوفا، $ = شراء حقيقي، ad = إعلان مكافأة
+SHOP_PAGES = ["WEAPONS", "SHIPS", "UPGRADES", "EXTRAS", "PREMIUM", "STYLE", "BUNDLES", "CHARGE"]
 SHOP = [  # (المعرّف, الصفحة, الاسم, الوصف, العملة)
+    # ---- 0: الأسلحة ----
     ("w_spread", 0, "SPREAD SHOT", "Wide golden fan", "c"),
     ("w_rapid", 0, "RAPID FIRE", "Fast pink bolts", "c"),
+    ("w_twin", 0, "TWIN BLASTER", "Double fast bolts", "c"),
     ("w_plasma", 0, "PLASMA CANNON", "Piercing energy orb", "c"),
     ("w_missile", 0, "HOMING MISSILES", "Locks on targets", "c"),
     ("w_flak", 0, "FLAK CANNON", "Bursts into shrapnel", "c"),
     ("w_tesla", 0, "TESLA COIL", "Chain lightning", "c"),
+    ("w_inferno", 0, "INFERNO", "Flamethrower stream", "c"),
+    ("w_cryo", 0, "CRYO CANNON", "Freezes and slows", "c"),
+    ("w_ripper", 0, "BUZZ RIPPER", "Piercing saw blade", "c"),
+    ("w_swarm", 0, "SWARM MISSILES", "Many tiny homers", "c"),
     ("w_lance", 0, "ION LANCE", "Pierces everything", "c"),
     ("upgrade", 0, "WEAPON POWER", "More damage + shots", "c"),
     ("firerate", 0, "FIRE RATE", "Shoot faster", "c"),
+    # ---- 1: المركبات ----
     ("s_vanguard", 1, "VANGUARD", "Balanced battlecruiser", "c"),
     ("s_falcon", 1, "FALCON", "Fast, light armor", "c"),
     ("s_titan", 1, "TITAN", "Heavy armor + shield", "c"),
     ("s_phantom", 1, "PHANTOM", "Glass cannon +35% dmg", "c"),
+    ("s_viper", 1, "VIPER", "Needle-fast striker", "c"),
+    # ---- 2: الترقيات ----
     ("hull", 2, "HULL ARMOR", "+1 max health", "c"),
     ("special", 2, "SPECIAL BAY", "+1 special capacity", "c"),
     ("shield", 2, "SHIELD CELL", "+25 shield energy", "c"),
@@ -3799,69 +4005,116 @@ SHOP = [  # (المعرّف, الصفحة, الاسم, الوصف, العملة)
     ("coinup", 2, "COIN BONUS", "+10% coins earned", "c"),
     ("luck", 2, "LUCKY DROPS", "More pickups drop", "c"),
     ("spower", 2, "SPECIAL POWER", "Stronger special", "c"),
+    ("magnetup", 2, "LOOT MAGNET", "Pulls pickups in", "c"),
+    ("crit", 2, "CRIT CHANCE", "4% x2 damage per lvl", "c"),
+    ("slayer", 2, "BOSS SLAYER", "+6% damage vs bosses", "c"),
+    ("xpup", 2, "PASS BOOST", "+10% pass XP per lvl", "c"),
+    # ---- 3: إضافات ----
     ("drone", 3, "WINGMAN DRONE", "Auto-firing helper", "c"),
     ("revive", 3, "REVIVE TOKEN", "Come back once", "c"),
     ("bombitem", 3, "BOMB", "Clears screen [X]", "c"),
     ("repair", 3, "FULL REPAIR", "Heal, shield, specials", "c"),
+    # ---- 4: مميز (كريستال) ----
     ("s_nova", 4, "NOVA PRIME", "Elite ship +25% dmg", "g"),
     ("s_eclipse", 4, "ECLIPSE", "Elite ship +50% dmg", "g"),
+    ("s_seraph", 4, "SERAPH", "Angel ship +60% dmg", "g"),
     ("w_photon", 4, "PHOTON BURST", "3 homing photons", "g"),
     ("w_singularity", 4, "SINGULARITY", "Black hole cannon", "g"),
+    ("w_railgun", 4, "RAILGUN", "Instant mega beam", "g"),
+    ("w_novaring", 4, "NOVA RING", "Ring of fire burst", "g"),
     ("prem_coin2", 4, "DOUBLE COINS", "x2 coins forever", "g"),
     ("prem_drone2", 4, "DRONE UPGRADE", "Drones deal x2", "g"),
     ("aegis", 4, "AEGIS CORE", "+50 shield (x4)", "g"),
     ("prem_revive3", 4, "REVIVE PACK", "+3 revive tokens", "g"),
     ("prem_bomb5", 4, "BOMB PACK", "+5 bombs", "g"),
+    # ---- 5: المظهر ----
     ("skin_classic", 5, "CLASSIC PAINT", "Original colors", "c"),
     ("skin_ice", 5, "ICE WING", "Frozen blue paint", "c"),
     ("skin_crimson", 5, "CRIMSON", "Blood red paint", "c"),
     ("skin_stealth", 5, "STEALTH", "Matte black paint", "c"),
+    ("skin_neon", 5, "NEON RUSH", "Green-pink neon", "c"),
+    ("skin_magma", 5, "MAGMA", "Molten lava paint", "c"),
     ("skin_gold", 5, "GOLDEN ARMOR", "Premium gold paint", "g"),
     ("skin_aurora", 5, "AURORA", "Premium aurora paint", "g"),
     ("skin_void", 5, "VOID WALKER", "Premium void paint", "g"),
+    ("skin_sakura", 5, "SAKURA", "Premium pink blossom", "g"),
+    ("skin_royal", 5, "ROYAL GUARD", "Premium blue + gold", "g"),
     ("trail_pink", 5, "PINK TRAIL", "Engine trail color", "c"),
-    ("trail_rainbow", 5, "RAINBOW TRAIL", "Premium color-cycling", "g"),
+    ("trail_green", 5, "TOXIC TRAIL", "Green engine trail", "c"),
+    ("trail_fire", 5, "FIRE TRAIL", "Burning engine trail", "c"),
+    ("trail_rainbow", 5, "RAINBOW TRAIL", "Color-cycling trail", "g"),
+    ("trail_gold", 5, "GOLD TRAIL", "Premium golden trail", "g"),
+    ("trail_galaxy", 5, "GALAXY TRAIL", "Premium cosmic trail", "g"),
+    # ---- 6: الحزم ----
     ("coins_5k", 6, "COIN POUCH", "5,000 coins", "g"),
     ("coins_25k", 6, "COIN CHEST", "25,000 coins", "g"),
     ("coins_100k", 6, "COIN VAULT", "100,000 coins", "g"),
-    ("bundle_warrior", 6, "WARRIOR PACK", "Coins + revives + bombs", "g"),
-    ("bundle_defender", 6, "DEFENDER PACK", "Aegis + revives + coins", "g"),
-    ("bundle_collector", 6, "COLLECTOR PACK", "3 paints + rainbow trail", "g"),
-    ("bundle_ace", 6, "ACE PACK", "Nova + Photon + bombs", "g"),
+    ("coins_500k", 6, "COIN TREASURY", "500,000 coins", "g"),
+    ("bundle_warrior", 6, "WARRIOR PACK", "Coins+revives+bombs", "g"),
+    ("bundle_defender", 6, "DEFENDER PACK", "Aegis+revives+coins", "g"),
+    ("bundle_collector", 6, "COLLECTOR PACK", "3 paints + trail", "g"),
+    ("bundle_ace", 6, "ACE PACK", "Nova+Photon+bombs", "g"),
+    ("bundle_arsenal", 6, "ARSENAL PACK", "3 premium guns", "g"),
+    ("bundle_style", 6, "STYLE PACK", "2 paints + 2 trails", "g"),
     ("pass_unlock", 6, "PASS UNLOCK", "Premium pass track", "g"),
     ("bundle_ultimate", 6, "ULTIMATE PACK", "Everything premium", "g"),
+    # ---- 7: الشحن ----
+    ("chg_ad", 7, "WATCH AD", "Free crystals!", "ad"),
+    ("chg_code", 7, "REDEEM CODE", "Type a recharge code", "ad"),
+    ("crystals_100", 7, "100 CRYSTALS", "Crystal pack", "$"),
+    ("crystals_300", 7, "300 CRYSTALS", "Crystal pack", "$"),
+    ("crystals_700", 7, "700 CRYSTALS", "Crystal pack", "$"),
+    ("crystals_1500", 7, "1500 CRYSTALS", "Best for weapons", "$"),
+    ("crystals_4000", 7, "4000 CRYSTALS", "Crystal pack", "$"),
+    ("crystals_10000", 7, "10000 CRYSTALS", "Mega crystal pack", "$"),
+    ("starter_pack", 7, "STARTER PACK", "One-time offer", "$"),
+    ("vip_30d", 7, "VIP 30 DAYS", "+50% coins, daily gems", "$"),
+    ("battle_pass", 7, "STARFALL PASS", "Premium pass track", "$"),
+    ("mega_pack", 7, "MEGA PACK", "One-time offer", "$"),
 ]
-WEAPON_COST = dict(spread=150, rapid=250, plasma=400, missile=600, flak=500, tesla=700, lance=900,
-                   photon=600, singularity=1200)
-SKIN_PRICE = dict(ice=600, crimson=600, stealth=800, gold=250, aurora=350, void=450)
-TRAIL_PRICE = dict(pink=400, rainbow=300)
+WEAPON_COST = dict(spread=150, rapid=250, twin=200, plasma=400, missile=600, flak=500, tesla=700,
+                   inferno=450, cryo=550, ripper=800, swarm=1000, lance=900,
+                   photon=600, singularity=1200, railgun=700, novaring=900)
+SKIN_PRICE = dict(ice=600, crimson=600, stealth=800, neon=900, magma=1000,
+                  gold=250, aurora=350, void=450, sakura=300, royal=500)
+TRAIL_PRICE = dict(pink=400, green=400, fire=500, rainbow=300, gold=250, galaxy=350)
 MAX_POWER = 30
-# ترقيات متدرجة: المعرّف -> (مفتاح الحفظ, أقصى مستوى, السعر الأساسي, الزيادة لكل مستوى)
 LVL_UPG = dict(firerate=("firerate_lv", 10, 150, 110), spower=("spower_lv", 10, 120, 90),
                speed=("speed_lv", 5, 200, 150), regen=("regen_lv", 5, 180, 130),
-               coinup=("coin_lv", 10, 250, 200), luck=("luck_lv", 10, 220, 160))
+               coinup=("coin_lv", 10, 250, 200), luck=("luck_lv", 10, 220, 160),
+               magnetup=("magnet_lv", 5, 200, 170), crit=("crit_lv", 10, 300, 220),
+               slayer=("slayer_lv", 10, 350, 250), xpup=("xp_lv", 5, 400, 300))
 ICON_OF = dict(bombitem="bomb", prem_coin2="coinup", prem_drone2="drone", aegis="regen",
-               prem_revive3="revive", prem_bomb5="bomb", coins_5k="coin", coins_25k="coin", coins_100k="coin",
+               prem_revive3="revive", prem_bomb5="bomb", coins_5k="coin", coins_25k="coin",
+               coins_100k="coin", coins_500k="coin", magnetup="magnet",
                bundle_warrior="bundle", bundle_defender="bundle", bundle_collector="bundle",
-               bundle_ace="bundle", bundle_ultimate="bundle", pass_unlock="pass")
-# حزم تُشترى بالكريستال: المعرّف -> (السعر, المكافآت, وصف)
+               bundle_ace="bundle", bundle_arsenal="bundle", bundle_style="bundle",
+               bundle_ultimate="bundle", pass_unlock="pass",
+               chg_ad="ad", chg_code="code", crystals_100="crystal", crystals_300="crystal",
+               crystals_700="crystal", crystals_1500="crystal", crystals_4000="crystal",
+               crystals_10000="crystal", starter_pack="bundle", vip_30d="vip",
+               battle_pass="pass", mega_pack="bundle")
 BUNDLES = {
     "coins_5k": (60, dict(coins=5000), "5,000 COINS"),
     "coins_25k": (250, dict(coins=25000), "25,000 COINS"),
     "coins_100k": (900, dict(coins=100000), "100,000 COINS"),
-    "bundle_warrior": (350, dict(coins=10000, revives=5, bombs=5), "10K COINS+5 REVIVES+5 BOMBS"),
-    "bundle_defender": (500, dict(coins=5000, aegis=2, revives=3), "2 AEGIS+3 REVIVES+5K"),
-    "bundle_collector": (800, dict(skins=["gold", "aurora", "void"], trails=["rainbow"]), "3 PAINTS+RAINBOW TRAIL"),
+    "coins_500k": (3800, dict(coins=500000), "500,000 COINS"),
+    "bundle_warrior": (350, dict(coins=10000, revives=5, bombs=5), "10K+5 REVIVE+5 BOMB"),
+    "bundle_defender": (500, dict(coins=5000, aegis=2, revives=3), "2 AEGIS+3 REVIVE+5K"),
+    "bundle_collector": (800, dict(skins=["gold", "aurora", "void"], trails=["rainbow"]), "3 PAINTS+RAINBOW"),
     "bundle_ace": (1300, dict(ships=["nova"], weapons=["photon"], bombs=3), "NOVA+PHOTON+3 BOMBS"),
-    "pass_unlock": (800, dict(pass_premium=True), "UNLOCK PREMIUM PASS TRACK"),
-    "bundle_ultimate": (3500, dict(ships=["nova", "eclipse"], weapons=["photon", "singularity"],
-                                   skins=["gold", "aurora", "void"], trails=["rainbow"], coin2=True, drone2=True,
-                                   pass_premium=True), "ALL PREMIUM SHIPS/GUNS/PAINTS+x2"),
+    "bundle_arsenal": (1500, dict(weapons=["railgun", "novaring", "photon"], bombs=5), "RAIL+RING+PHOTON"),
+    "bundle_style": (900, dict(skins=["sakura", "royal"], trails=["gold", "galaxy"]), "2 PAINTS+2 TRAILS"),
+    "pass_unlock": (800, dict(pass_premium=True), "UNLOCK PREMIUM TRACK"),
+    "bundle_ultimate": (4500, dict(ships=["nova", "eclipse", "seraph"],
+                                   weapons=["photon", "singularity", "railgun", "novaring"],
+                                   skins=["gold", "aurora", "void", "sakura", "royal"],
+                                   trails=["rainbow", "gold", "galaxy"], coin2=True, drone2=True,
+                                   pass_premium=True), "ALL PREMIUM + x2 + PASS"),
 }
 
 
 def bundle_owned(gr):
-    """هل يملك اللاعب كل محتويات الحزمة (الحزم الاستهلاكية تُشترى دائماً)؟"""
     if any(gr.get(k) for k in ("coins", "crystals", "revives", "bombs", "aegis", "vip_days")):
         return False
     ok = all(i in save[k] for k in ("ships", "weapons", "skins", "trails") for i in gr.get(k, []))
@@ -3875,44 +4128,58 @@ def bundle_owned(gr):
 
 
 def shop_icon_kind(item_id):
-    """اسم الأيقونة المناسبة لعنصر المتجر."""
     if item_id.startswith("s_"):
         return "ship_" + item_id[2:]
     return ICON_OF.get(item_id, item_id)
 
 
 def page_items():
-    """فهارس عناصر الصفحة الحالية في قائمة SHOP."""
     return [i for i, it in enumerate(SHOP) if it[1] == U.page]
 
 
 def shop_info(i):
-    """يعيد (حالة نصية أو None, السعر أو None, سطر معلومات)."""
+    """يعيد (حالة نصية أو None, السعر (رقم أو نص) أو None, سطر معلومات)."""
     kind = SHOP[i][0]
+    if kind == "chg_ad":
+        used = ad_used_today()
+        line = "TODAY %d / %d" % (used, AD_DAILY_MAX)
+        if used >= AD_DAILY_MAX:
+            return "COME BACK TOMORROW", None, line
+        if U.ad_pending:
+            return "LOADING AD...", None, line
+        return None, "+%d GEMS" % AD_CRYSTALS, line
+    if kind == "chg_code":
+        return None, "ENTER CODE", ""
+    if kind in PRODUCTS:
+        _, pr, gr = PRODUCTS[kind]
+        line = reward_text(gr)[:22]
+        if gr.get("once") and kind in save["purchases"]:
+            return "OWNED", None, line
+        return None, pr, line
     if kind in BUNDLES:
         price, gr, line = BUNDLES[kind]
         return ("OWNED", None, line) if bundle_owned(gr) else (None, price, line)
     if kind.startswith("w_"):
         w = kind[2:]
         if w in save["weapons"]:
-            return ("EQUIPPED" if save["equipped"] == w else "OWNED - PRESS TO EQUIP"), None, ""
+            return ("EQUIPPED" if save["equipped"] == w else "OWNED - TAP TO EQUIP"), None, ""
         return None, WEAPON_COST[w], ""
     if kind.startswith("s_"):
         sh = kind[2:]
         sd = SHIP_DEFS[sh]
         line = "SPD %.1f HP %+d DMG x%.2f" % (sd["speed"], sd["hp"], sd["dmg"])
         if sh in save["ships"]:
-            return ("EQUIPPED" if save["ship"] == sh else "OWNED - PRESS TO EQUIP"), None, line
+            return ("EQUIPPED" if save["ship"] == sh else "OWNED - TAP TO EQUIP"), None, line
         return None, sd["price"], line
     if kind.startswith("skin_"):
         sk = kind[5:]
         if sk in save["skins"]:
-            return ("EQUIPPED" if save["skin"] == sk else "OWNED - PRESS TO EQUIP"), None, ""
+            return ("EQUIPPED" if save["skin"] == sk else "OWNED - TAP TO EQUIP"), None, ""
         return None, SKIN_PRICE[sk], ""
     if kind.startswith("trail_"):
         tr = kind[6:]
         if tr in save["trails"]:
-            return ("EQUIPPED - PRESS TO REMOVE" if save["trail"] == tr else "OWNED - PRESS TO EQUIP"), None, ""
+            return ("EQUIPPED - TAP TO REMOVE" if save["trail"] == tr else "OWNED - TAP TO EQUIP"), None, ""
         return None, TRAIL_PRICE[tr], ""
     if kind == "upgrade":
         line = "LEVEL %d / %d" % (save["power"], MAX_POWER)
@@ -3968,7 +4235,6 @@ def shop_info(i):
 
 
 def equip_item(kind):
-    """تجهيز عنصر مملوك (سلاح / مركبة / طلاء / أثر)."""
     if kind.startswith("w_"):
         save["equipped"] = kind[2:]
     elif kind.startswith("s_"):
@@ -3986,9 +4252,24 @@ def equip_item(kind):
 
 
 def shop_buy(i):
-    """ينفذ الشراء أو التجهيز ويعيد رسالة للاعب. العملة: عادية أو كريستال."""
     kind, _, _, _, cur = SHOP[i]
     status, price, _ = shop_info(i)
+    if kind == "chg_ad":
+        if price is None:
+            sfx("deny")
+            return status
+        sfx("click")
+        return request_crystal_ad()
+    if kind == "chg_code":
+        sfx("click")
+        open_recharge("shop")
+        return ""
+    if kind in PRODUCTS:
+        if price is None:
+            sfx("deny")
+            return "ALREADY OWNED"
+        sfx("click")
+        return request_purchase(kind)
     if price is None:
         if kind in BUNDLES:
             sfx("deny")
@@ -3998,7 +4279,7 @@ def shop_buy(i):
             sfx("buy")
             write_save()
             return "EQUIPPED"
-        if status and status.startswith("EQUIPPED - PRESS"):
+        if status and status.startswith("EQUIPPED - TAP"):
             save["trail"] = "cyan"
             sfx("click")
             write_save()
@@ -4008,7 +4289,7 @@ def shop_buy(i):
     bal = save["crystals"] if cur == "g" else save["coins"]
     if bal < price:
         sfx("deny")
-        return "NOT ENOUGH CRYSTALS - PRESS R TO RECHARGE" if cur == "g" else "NOT ENOUGH COINS"
+        return "NOT ENOUGH CRYSTALS - OPEN THE CHARGE TAB" if cur == "g" else "NOT ENOUGH COINS"
     if cur == "g":
         save["crystals"] -= price
     else:
@@ -4054,7 +4335,7 @@ def shop_buy(i):
         save["revives"] = min(9, save["revives"] + 3)
     elif kind == "prem_bomb5":
         save["bombs"] = min(9, save["bombs"] + 5)
-    for p in ps:  # تطبيق القدرات الجديدة فوراً على اللاعبين الحاليين
+    for p in ps:
         p.stats()
         if kind in ("hull", "repair") or kind.startswith("s_"):
             p.health = p.max_health
@@ -4069,20 +4350,22 @@ def shop_buy(i):
     write_save()
     return "PURCHASED!"
 
-# ================= الواجهة والقوائم =================
-U = SimpleNamespace(state="menu", sel=dict(menu=0, shop=0, settings=0, recharge=0), menu_level=1, page=0, tabs=[], pass_view=1, dmsg="", dmsg_t=0,
-                    code="", rmsg="", rmsg_ok=False, rmsg_t=0, recharge_back="menu",
+
+# ================= الواجهة =================
+U = SimpleNamespace(state="menu", sel=dict(menu=0, shop=0, settings=0, recharge=0), menu_level=1, page=0, tabs=[],
+                    pass_view=1, dmsg="", dmsg_t=0, code="", rmsg="", rmsg_ok=False, rmsg_t=0, recharge_back="menu",
                     confirm=False, rebind=None, msg="", msg_t=0, rects=[], running=True,
-                    shop_back="menu", earned=0, ad_rects=[], ad_pending=False, ad_msg="", dead_ad_used=False, reward_doubled=False,
-                    recharge_ad_rect=None, crystal_ad_count=0)
+                    shop_back="menu", earned=0, ad_rects=[], ad_pending=False, ad_msg="", dead_ad_used=False,
+                    reward_doubled=False, recharge_ad_rect=None, redeem_rect=None, code_rect=None,
+                    scroll=0, scroll_rects=[], btns=[], ad_test=None)
 MENU_ROWS = ["play", "mode", "shop", "recharge", "pass", "daily", "settings", "new", "quit"]
 SET_ROWS = ["sfx", "music", "difficulty", "shake", "bloom", "scan", "autofire", "b_shield", "b_special",
             "b_weapon", "b_pause", "b_bomb", "fullscreen", "back"]
 DIFF_NAMES = ["EASY", "NORMAL", "HARD"]
+TOUCH_BACK_RECT = pygame.Rect(WIDTH - 150, HEIGHT - 58, 130, 42)
 
-# دوال رسم القوائم: panel = لوحة شفافة، draw_row = صف قائمة
+
 def panel(x, y, w, h, border=GOLD):
-    """لوحة هولوغرامية بزوايا مقطوعة وخطوط مسح خفيفة (واجهة عام 2500)."""
     c = 10
     local = [(c, 0), (w - c, 0), (w, c), (w, h - c), (w - c, h), (c, h), (0, h - c), (0, c)]
     sf = pygame.Surface((w, h), pygame.SRCALPHA)
@@ -4094,6 +4377,7 @@ def panel(x, y, w, h, border=GOLD):
     pygame.draw.line(canvas, WHITE, (x + c, y), (x + c + 12, y), 2)
     pygame.draw.line(canvas, WHITE, (x + w - c - 12, y + h), (x + w - c, y + h), 2)
 
+
 def draw_row(rect, selected, label, value=None, col=WHITE):
     if selected:
         add_glow(canvas, rect.centerx, rect.centery, rect.w // 2, (40, 40, 10))
@@ -4101,6 +4385,53 @@ def draw_row(rect, selected, label, value=None, col=WHITE):
     text(label, F_M, GOLD_LIGHT if selected else col, rect.x + 16, rect.centery - 11)
     if value is not None:
         text(value, F_M, CYAN if selected else GRAY_L, rect.right - 16, rect.centery - 11, right=True)
+
+
+def draw_btn(r, label, col=CYAN, enabled=True):
+    pygame.draw.rect(canvas, (14, 28, 58) if enabled else (30, 34, 46), r, border_radius=8)
+    pygame.draw.rect(canvas, col if enabled else GRAY, r, 2, border_radius=8)
+    text(label, F_S, WHITE if enabled else GRAY_L, r.centerx, r.centery, center=True)
+
+
+def draw_back_btn():
+    if ANDROID:
+        draw_btn(TOUCH_BACK_RECT, "BACK", LIGHT_BLUE)
+
+
+def back_hit(pos):
+    return ANDROID and TOUCH_BACK_RECT.collidepoint(pos)
+
+
+def text_input(on):
+    """لوحة المفاتيح الافتراضية على الهاتف (لكتابة كود الشحن)."""
+    if not ANDROID:
+        return
+    try:
+        if on:
+            pygame.key.start_text_input()
+        else:
+            pygame.key.stop_text_input()
+    except Exception:
+        pass
+
+
+def open_shop(back):
+    U.shop_back = back
+    U.scroll = 0
+    U.state = "shop"
+
+
+def open_recharge(back):
+    U.recharge_back = back
+    U.code = ""
+    U.state = "recharge"
+    text_input(True)
+
+
+def close_recharge():
+    text_input(False)
+    U.state = U.recharge_back
+
 
 def start_run(level, ad_continue=False):
     if not ad_continue:
@@ -4110,13 +4441,14 @@ def start_run(level, ad_continue=False):
     U.ad_msg = ""
     U.state = "playing"
 
+
 def go_menu():
     write_save()
     U.menu_level = save["level"]
     U.state = "menu"
     set_music("menu")
 
-# شاشة القائمة الرئيسية
+
 def draw_menu():
     space.draw(canvas)
     t = pygame.time.get_ticks() / 1000.0
@@ -4154,19 +4486,22 @@ def draw_menu():
         elif row == "settings":
             draw_row(r, U.sel["menu"] == i, "SETTINGS")
         elif row == "new":
-            draw_row(r, U.sel["menu"] == i, "NEW GAME", "PRESS AGAIN TO ERASE!" if U.confirm else None,
+            draw_row(r, U.sel["menu"] == i, "NEW GAME", "TAP AGAIN TO ERASE!" if U.confirm else None,
                      RED_LIGHT if U.confirm else WHITE)
         else:
             draw_row(r, U.sel["menu"] == i, "QUIT")
     text("REACHED LEVEL %d / %d    HIGH SCORE %d" % (save["level"], MAX_LEVEL, save["high_score"]),
          F_S, GOLD, WIDTH // 2, 582, center=True)
     b = save["binds"]
-    text("MOVE ARROWS/WASD   %s SHIELD   %s SPECIAL   %s WEAPON   B SHOP   %s PAUSE" %
-         (kname(b["shield"]), kname(b["special"]), kname(b["weapon"]), kname(b["pause"])),
-         F_S, GRAY_L, WIDTH // 2, 640, center=True)
+    if ANDROID:
+        text("TAP LEFT / RIGHT SIDE OF THE LEVEL ROW TO CHANGE LEVEL", F_S, GRAY_L, WIDTH // 2, 640, center=True)
+    else:
+        text("MOVE ARROWS/WASD   %s SHIELD   %s SPECIAL   %s WEAPON   B SHOP   %s PAUSE" %
+             (kname(b["shield"]), kname(b["special"]), kname(b["weapon"]), kname(b["pause"])),
+             F_S, GRAY_L, WIDTH // 2, 640, center=True)
     text("PROGRESS IS SAVED AUTOMATICALLY", F_S, GRAY_L, WIDTH // 2, 662, center=True)
 
-# نص قيمة كل صف في شاشة الإعدادات
+
 def setting_value(row):
     if row == "sfx":
         return "< %d / 10 >" % save["sfx"]
@@ -4186,12 +4521,13 @@ def setting_value(row):
         return kname(save["binds"][row[2:]])
     return None
 
+
 SET_LABELS = dict(sfx="SOUND EFFECTS", music="MUSIC", difficulty="DIFFICULTY", shake="SCREEN SHAKE",
                   bloom="GLOW EFFECT (BLOOM)", scan="SCANLINES",
                   autofire="AUTO FIRE", b_shield="KEY: SHIELD", b_special="KEY: SPECIAL",
                   b_weapon="KEY: SWITCH WEAPON", b_pause="KEY: PAUSE", b_bomb="KEY: USE BOMB", fullscreen="FULLSCREEN (F11)", back="BACK")
 
-# تغيير إعداد (d = -1/+1 للأسهم، 0 للضغط على Enter)
+
 def change_setting(row, d):
     if row == "sfx":
         save["sfx"] = clamp(save["sfx"] + d, 0, 10)
@@ -4208,16 +4544,17 @@ def change_setting(row, d):
         save[row] = not save[row]
     elif row == "autofire" and d == 0:
         save["autofire"] = not save["autofire"]
-    elif row.startswith("b_") and d == 0:
+    elif row.startswith("b_") and d == 0 and not ANDROID:
         U.rebind = row[2:]
-    elif row == "fullscreen" and d == 0:
+    elif row == "fullscreen" and d == 0 and not ANDROID:
         pygame.display.toggle_fullscreen()
     elif row == "back" and d == 0:
         write_save()
         U.state = U.shop_back if U.shop_back == "pause" else "menu"
-    write_save() if row not in ("back",) else None
+        return
+    write_save()
 
-# شاشة الإعدادات
+
 def draw_settings():
     space.draw(canvas)
     text("SETTINGS", F_XL, GOLD, WIDTH // 2, 54, center=True)
@@ -4226,45 +4563,72 @@ def draw_settings():
         r = pygame.Rect(WIDTH // 2 - 300, 100 + i * 36, 600, 32)
         U.rects.append((r, i))
         draw_row(r, U.sel["settings"] == i, SET_LABELS[row], setting_value(row))
-    text("LEFT / RIGHT TO CHANGE   ENTER TO SELECT   ESC TO GO BACK", F_S, GRAY_L, WIDTH // 2, 672, center=True)
+    hint = "TAP LEFT / RIGHT HALF OF A ROW TO CHANGE" if ANDROID else "LEFT / RIGHT TO CHANGE   ENTER TO SELECT   ESC TO GO BACK"
+    text(hint, F_S, GRAY_L, WIDTH // 2, 672, center=True)
+
+
+def move_shop_sel(d):
+    n = len(page_items())
+    s = U.sel["shop"]
+    ns = s + d
+    if 0 <= ns < n:
+        U.sel["shop"] = ns
+    elif d > 0 and s // 3 < (n - 1) // 3:
+        U.sel["shop"] = n - 1
+    else:
+        return
+    sfx("click")
+
 
 def draw_shop():
-    """يرسم المتجر: تبويبات الصفحات الست ثم بطاقات العناصر (3 × 3) مع رصيد العملتين."""
+    """المتجر: 8 تبويبات، بطاقات 3 في كل صف (3 صفوف ظاهرة) مع تمرير."""
     space.draw(canvas)
     text("STARFALL SHOP", F_XL, GOLD, WIDTH // 2, 36, center=True)
     canvas.blit(get_icon("coin", 32), (40, 62))
     text("COINS %d" % save["coins"], F_M, GOLD, 78, 68)
     canvas.blit(get_icon("crystal", 32), (WIDTH - 262, 62))
     text("CRYSTALS %d" % save["crystals"], F_M, (210, 150, 255), WIDTH - 224, 68)
-    text("[R] RECHARGE CRYSTALS", F_S, (210, 150, 255), WIDTH - 40, 100, right=True)
     text("WEAPON: %s LV %d     SHIP: %s" % (save["equipped"].upper(), save["power"], SHIP_DEFS[save["ship"]]["name"]),
          F_S, CYAN, 40, 100)
+    if not ANDROID:
+        text("[R] RECHARGE CRYSTALS", F_S, (210, 150, 255), WIDTH - 40, 100, right=True)
     U.rects = []
     U.tabs = []
     for pi, name in enumerate(SHOP_PAGES):
-        r = pygame.Rect(30 + pi * 122, 126, 116, 30)
+        r = pygame.Rect(18 + pi * 108, 126, 104, 30)
         U.tabs.append((r, pi))
         on = pi == U.page
         prem = name in ("PREMIUM", "BUNDLES")
-        pygame.draw.rect(canvas, (60, 40, 100) if on and prem else (40, 50, 90) if on else (14, 20, 44), r, border_radius=6)
-        pygame.draw.rect(canvas, (210, 150, 255) if prem else GOLD if on else (60, 80, 130), r, 2, border_radius=6)
-        text(name, F_S, (230, 190, 255) if prem else GOLD_LIGHT if on else GRAY_L, r.centerx, r.centery, center=True)
+        chg = name == "CHARGE"
+        pygame.draw.rect(canvas, (60, 40, 100) if on and prem else (20, 70, 50) if on and chg else (40, 50, 90) if on else (14, 20, 44), r, border_radius=6)
+        pygame.draw.rect(canvas, (210, 150, 255) if prem else GREEN if chg else GOLD if on else (60, 80, 130), r, 2, border_radius=6)
+        text(name, F_S, (230, 190, 255) if prem else (170, 255, 190) if chg else GOLD_LIGHT if on else GRAY_L, r.centerx, r.centery, center=True)
     items = page_items()
-    U.sel["shop"] = min(U.sel["shop"], len(items) - 1)
+    n_items = len(items)
+    U.sel["shop"] = clamp(U.sel["shop"], 0, n_items - 1)
+    total_rows = (n_items + 2) // 3
+    srow = U.sel["shop"] // 3
+    if srow < U.scroll:
+        U.scroll = srow
+    elif srow >= U.scroll + 3:
+        U.scroll = srow - 2
+    U.scroll = clamp(U.scroll, 0, max(0, total_rows - 3))
     cw, ch = 270, 132
     for n, i in enumerate(items):
+        row = n // 3
+        if row < U.scroll or row >= U.scroll + 3:
+            continue
         kind, _, name, desc, cur = SHOP[i]
         cx = 30 + (n % 3) * 285
-        cy = 168 + (n // 3) * 142
+        cy = 168 + (row - U.scroll) * 142
         r = pygame.Rect(cx, cy, cw, ch)
         U.rects.append((r, n))
         sel = U.sel["shop"] == n
         status, price, line = shop_info(i)
-        accent = GOLD if sel else (190, 120, 255) if cur == "g" else (60, 80, 130)
+        accent = GOLD if sel else (190, 120, 255) if cur == "g" else GREEN if cur in ("$", "ad") else (60, 80, 130)
         panel(cx, cy, cw, ch, accent)
         if sel:
             add_glow(canvas, r.centerx, r.centery, 150, (40, 36, 10))
-        # أيقونة كبيرة ومحددة لكل عملية شراء: سلاح، سفينة، تطوير، طلاء أو حزمة.
         icon_size = 92
         icon_x, icon_y = cx + 7, cy + 20
         pygame.draw.circle(canvas, (8, 14, 34), (icon_x + icon_size // 2, icon_y + icon_size // 2), 43)
@@ -4277,63 +4641,116 @@ def draw_shop():
         if line:
             text(line, F_S, CYAN, cx + 110, cy + 62)
         if price is not None:
-            bal = save["crystals"] if cur == "g" else save["coins"]
-            can = bal >= price
-            canvas.blit(get_icon("crystal" if cur == "g" else "coin", 28), (cx + 106, cy + 92))
-            okcol = (210, 150, 255) if cur == "g" else GOLD
-            text(str(price), F_M, okcol if can else RED_LIGHT, cx + 138, cy + 96)
+            if isinstance(price, str):
+                text(price, F_M, GREEN if cur == "ad" else GOLD, cx + 110, cy + 96)
+            else:
+                bal = save["crystals"] if cur == "g" else save["coins"]
+                can = bal >= price
+                canvas.blit(get_icon("crystal" if cur == "g" else "coin", 28), (cx + 106, cy + 92))
+                okcol = (210, 150, 255) if cur == "g" else GOLD
+                text(str(price), F_M, okcol if can else RED_LIGHT, cx + 138, cy + 96)
         else:
-            text(status, F_S, GREEN if "EQUIP" in status or status == "ACTIVE" else GOLD, cx + 110, cy + 100)
-    if U.msg_t > 0:
-        text(U.msg, F_M, GOLD_LIGHT, WIDTH // 2, 626, center=True)
-    text("ARROWS: SELECT   Q / E / TAB: PAGE   ENTER or 1-9: BUY   R: RECHARGE   ESC or B: BACK", F_S, GRAY_L, WIDTH // 2, 668, center=True)
+            text(status, F_S, GREEN if ("EQUIP" in status or status in ("ACTIVE", "OWNED")) else GOLD, cx + 110, cy + 100)
+    # أزرار التمرير
+    U.scroll_rects = []
+    if total_rows > 3:
+        up = pygame.Rect(30, 628, 44, 32)
+        dn = pygame.Rect(82, 628, 44, 32)
+        U.scroll_rects = [(up, -3), (dn, 3)]
+        for rr, d in U.scroll_rects:
+            pygame.draw.rect(canvas, (14, 28, 58), rr, border_radius=6)
+            pygame.draw.rect(canvas, CYAN, rr, 2, border_radius=6)
+            cx2, cy2 = rr.center
+            if d < 0:
+                pygame.draw.polygon(canvas, CYAN, [(cx2, cy2 - 8), (cx2 - 9, cy2 + 6), (cx2 + 9, cy2 + 6)])
+            else:
+                pygame.draw.polygon(canvas, CYAN, [(cx2, cy2 + 8), (cx2 - 9, cy2 - 6), (cx2 + 9, cy2 - 6)])
+        text("MORE ITEMS  %d/%d" % (U.sel["shop"] + 1, n_items), F_S, GRAY_L, 138, 637)
+    if U.msg_t > 0 and U.msg:
+        text(U.msg, F_M, GOLD_LIGHT, WIDTH // 2, 612, center=True)
     if ANDROID:
-        pygame.draw.rect(canvas, (25, 55, 90), TOUCH_BACK_RECT, border_radius=8)
-        pygame.draw.rect(canvas, LIGHT_BLUE, TOUCH_BACK_RECT, 2, border_radius=8)
-        text("BACK", F_M, WHITE, TOUCH_BACK_RECT.centerx, TOUCH_BACK_RECT.centery, center=True)
+        text("TAP A CARD TO SELECT - TAP AGAIN TO BUY - DRAG TO SCROLL", F_S, GRAY_L, WIDTH // 2, 676, center=True)
+    else:
+        text("ARROWS: SELECT   Q / E / TAB: PAGE   ENTER or 1-9: BUY   R: RECHARGE   ESC or B: BACK", F_S, GRAY_L, WIDTH // 2, 676, center=True)
+    draw_back_btn()
+
+
+def recharge_submit():
+    if U.code:
+        ok, U.rmsg = redeem_code(U.code)
+        U.rmsg_ok = ok
+        if ok:
+            U.code = ""
+            sfx("crystal")
+        else:
+            sfx("deny")
+    else:
+        U.rmsg = request_purchase(CODE_SKUS[U.sel["recharge"]])
+        U.rmsg_ok = True
+    U.rmsg_t = 300
 
 
 def draw_recharge():
-    """شاشة المبيعات: منتجات الشحن + خانة كود الشحن. الأسهم لاختيار منتج، ENTER للشراء أو لاستبدال الكود."""
     space.draw(canvas)
     text("STORE  -  RECHARGE", F_XL, (210, 150, 255), WIDTH // 2, 40, center=True)
     canvas.blit(get_icon("crystal", 32), (WIDTH // 2 - 120, 74))
     text("BALANCE: %d" % save["crystals"], F_M, WHITE, WIDTH // 2 - 80, 80)
+    U.rects = []
     for i, sku in enumerate(CODE_SKUS):
         name, price, gr = PRODUCTS[sku]
         r = pygame.Rect(60 + (i // 5) * 395, 118 + (i % 5) * 58, 380, 52)
+        U.rects.append((r, i))
         sel = U.sel["recharge"] == i
         panel(r.x, r.y, r.w, r.h, GOLD if sel else (190, 120, 255))
         canvas.blit(get_icon("crystal" if "crystals" in sku else "pass" if "pass" in sku else "bundle", 38), (r.x + 8, r.y + 7))
         text(name, F_M, GOLD_LIGHT if sel else WHITE, r.x + 56, r.y + 6)
         text(reward_text(gr)[:34], F_S, GRAY_L, r.x + 56, r.y + 30)
         text(price, F_M, GOLD, r.right - 12, r.y + 14, right=True)
-    # زر إعلان مكافأة: لا يمنح شيئاً إلا بعد تأكيد جسر الإعلانات مشاهدة الإعلان كاملاً.
-    U.recharge_ad_rect = pygame.Rect(230, 410, 440, 42)
-    ad_ready = not U.ad_pending and U.crystal_ad_count < 5
+    U.recharge_ad_rect = pygame.Rect(230, 412, 440, 42)
+    left = AD_DAILY_MAX - ad_used_today()
+    ad_ready = not U.ad_pending and left > 0
     pygame.draw.rect(canvas, (10, 48, 38) if ad_ready else (35, 42, 55), U.recharge_ad_rect, border_radius=8)
     pygame.draw.rect(canvas, GREEN if ad_ready else GRAY, U.recharge_ad_rect, 2, border_radius=8)
-    ad_label = "WATCH AD: +25 NOVA CRYSTALS (%d/5)" % U.crystal_ad_count if ad_ready else ("AD IN PROGRESS..." if U.ad_pending else "SESSION CRYSTAL ADS USED")
+    ad_label = "WATCH AD: +%d CRYSTALS (%d LEFT TODAY)" % (AD_CRYSTALS, left) if ad_ready else ("AD IN PROGRESS..." if U.ad_pending else "DAILY ADS USED - COME BACK TOMORROW")
     text(ad_label, F_M, WHITE if ad_ready else GRAY_L, U.recharge_ad_rect.centerx, U.recharge_ad_rect.centery, center=True)
-    text("Arrows: choose product   ENTER (empty box): buy   F1: open store page", F_S, GRAY_L, WIDTH // 2, 465, center=True)
-    text("After buying a code, type or paste it below (Ctrl+V) and press ENTER", F_S, GRAY_L, WIDTH // 2, 442, center=True)
-    box = pygame.Rect(150, 500, 600, 50)
+    text("After buying a code, type it below and tap REDEEM", F_S, GRAY_L, WIDTH // 2, 472, center=True)
+    box = pygame.Rect(60, 492, 560, 50)
+    U.code_rect = box
     panel(box.x, box.y, box.w, box.h, (210, 150, 255))
     cursor = "_" if (pygame.time.get_ticks() // 400) % 2 == 0 else " "
     text((U.code + cursor) if U.code else "SF-XXXXX-XXXXX-XXXXX-XXXXX", F_L,
          WHITE if U.code else GRAY_D, box.centerx, box.centery, center=True)
+    U.redeem_rect = pygame.Rect(640, 492, 200, 50)
+    draw_btn(U.redeem_rect, "REDEEM CODE", GREEN)
     if U.rmsg_t > 0:
         text(U.rmsg, F_M, GREEN if U.rmsg_ok else RED_LIGHT, WIDTH // 2, 570, center=True)
-    text("Crystals come from purchases/codes or confirmed rewarded ads.", F_S, GRAY_L, WIDTH // 2, 615, center=True)
-    text("ENTER: BUY / REDEEM    CTRL+V: PASTE    BACKSPACE: DELETE    ESC: BACK", F_S, GRAY_L, WIDTH // 2, 668, center=True)
-    if ANDROID:
-        pygame.draw.rect(canvas, (25, 55, 90), TOUCH_BACK_RECT, border_radius=8)
-        pygame.draw.rect(canvas, LIGHT_BLUE, TOUCH_BACK_RECT, 2, border_radius=8)
-        text("BACK", F_M, WHITE, TOUCH_BACK_RECT.centerx, TOUCH_BACK_RECT.centery, center=True)
+    if U.ad_msg:
+        text(U.ad_msg, F_S, GOLD_LIGHT, WIDTH // 2, 598, center=True)
+    text("Crystals come from purchases/codes or confirmed rewarded ads.", F_S, GRAY_L, WIDTH // 2, 622, center=True)
+    if not ANDROID:
+        text("ENTER: BUY / REDEEM    CTRL+V: PASTE    BACKSPACE: DELETE    F1: STORE PAGE    ESC: BACK", F_S, GRAY_L, WIDTH // 2, 676, center=True)
+    draw_back_btn()
+
+
+def pass_do(a):
+    if a == "up":
+        U.pass_view = max(1, U.pass_view - 2)
+    elif a == "down":
+        U.pass_view = min(PASS_TIERS - 7, U.pass_view + 2)
+    elif a == "claim":
+        n = claim_pass()
+        U.dmsg = "CLAIMED %d REWARDS" % n if n else "NOTHING TO CLAIM"
+        U.dmsg_t = 200
+        sfx("powerup" if n else "deny")
+    elif a == "store":
+        open_recharge("pass")
+    elif a == "daily":
+        U.dmsg = claim_daily()
+        U.dmsg_t = 240
+        sfx("powerup" if U.dmsg.startswith("CLAIMED") else "deny")
 
 
 def draw_pass():
-    """تذكرة ستارفول: 30 مستوى، مسار مجاني ومسار مميز (يُفتح بالشراء)."""
     space.draw(canvas)
     tier = pass_tier()
     text("STARFALL PASS", F_XL, GOLD, WIDTH // 2, 40, center=True)
@@ -4341,34 +4758,37 @@ def draw_pass():
     pygame.draw.rect(canvas, (20, 30, 60), (WIDTH // 2 - 200, 104, 400, 10))
     frac = 1.0 if tier >= PASS_TIERS else (save["pass_xp"] % PASS_XP_PER_TIER) / float(PASS_XP_PER_TIER)
     pygame.draw.rect(canvas, CYAN, (WIDTH // 2 - 200, 104, int(400 * frac), 10))
-    text("PREMIUM TRACK: UNLOCKED" if save["pass_prem"] else "PREMIUM TRACK LOCKED  -  unlock in STORE (F1) or SHOP > BUNDLES",
+    text("PREMIUM TRACK: UNLOCKED" if save["pass_prem"] else "PREMIUM TRACK LOCKED  -  unlock in SHOP > CHARGE",
          F_S, (210, 150, 255) if save["pass_prem"] else RED_LIGHT, WIDTH // 2, 126, center=True)
     for n in range(8):
         t = U.pass_view + n
         if t > PASS_TIERS:
             break
-        y = 146 + n * 58
-        panel(50, y, 800, 52, (60, 120, 200) if t <= tier else (50, 60, 90))
-        text("TIER %d" % t, F_M, GOLD if t <= tier else GRAY, 66, y + 14)
+        y = 146 + n * 56
+        panel(50, y, 800, 50, (60, 120, 200) if t <= tier else (50, 60, 90))
+        text("TIER %d" % t, F_M, GOLD if t <= tier else GRAY, 66, y + 13)
         fs = "CLAIMED" if t in save["pass_free"] else ("READY" if t <= tier else "LOCKED")
         ps = "CLAIMED" if t in save["pass_paid"] else ("READY" if (t <= tier and save["pass_prem"]) else "LOCKED")
-        text("FREE:    " + reward_text(pass_reward(t, False)) + "   [" + fs + "]", F_S, WHITE, 190, y + 8)
-        text("PREMIUM: " + reward_text(pass_reward(t, True)) + "   [" + ps + "]", F_S, (210, 150, 255), 190, y + 28)
+        text("FREE:    " + reward_text(pass_reward(t, False)) + "   [" + fs + "]", F_S, WHITE, 190, y + 7)
+        text("PREMIUM: " + reward_text(pass_reward(t, True)) + "   [" + ps + "]", F_S, (210, 150, 255), 190, y + 27)
+    U.btns = [(pygame.Rect(40, 604, 90, 40), "up"), (pygame.Rect(140, 604, 90, 40), "down"),
+              (pygame.Rect(250, 604, 200, 40), "claim"), (pygame.Rect(470, 604, 200, 40), "store")]
+    draw_btn(U.btns[0][0], "UP")
+    draw_btn(U.btns[1][0], "DOWN")
+    draw_btn(U.btns[2][0], "CLAIM ALL", GREEN)
+    draw_btn(U.btns[3][0], "GET PREMIUM", (210, 150, 255))
     if U.dmsg_t > 0:
-        text(U.dmsg, F_M, GOLD_LIGHT, WIDTH // 2, 626, center=True)
-    text("Earn XP by clearing levels and bosses.   UP/DOWN: scroll   ENTER: claim all   F1: store   ESC: back",
-         F_S, GRAY_L, WIDTH // 2, 668, center=True)
+        text(U.dmsg, F_M, GOLD_LIGHT, WIDTH // 2, 660, center=True)
+    draw_back_btn()
 
 
 def draw_daily():
-    """المكافأة اليومية: 7 أيام متتالية، وفي اليوم السابع جائزة كبيرة."""
     space.draw(canvas)
     text("DAILY REWARD", F_XL, GOLD, WIDTH // 2, 54, center=True)
     day, ok = daily_state()
     for i, gr in enumerate(DAILY_REWARDS):
         r = pygame.Rect(40 + (i % 4) * 210, 130 + (i // 4) * 170, 190, 150)
         here = ok and i == day
-        done = (i < day) if ok else (i <= (save["daily_day"] - 1) % 7 and save["daily_day"] != 0 or save["daily_day"] == 0)
         panel(r.x, r.y, r.w, r.h, GREEN if here else (60, 80, 130))
         text("DAY %d" % (i + 1), F_M, GOLD_LIGHT if here else WHITE, r.centerx, r.y + 20, center=True)
         for k, part in enumerate(reward_text(gr).split(" + ")):
@@ -4379,30 +4799,35 @@ def draw_daily():
         text("VIP BONUS: +25 CRYSTALS EVERY DAY", F_M, GOLD, WIDTH // 2, 480, center=True)
     else:
         text("Tip: VIP members get +25 crystals every day and +50% coins", F_S, GRAY_L, WIDTH // 2, 480, center=True)
+    U.btns = [(pygame.Rect(WIDTH // 2 - 110, 505, 220, 46), "daily")]
+    draw_btn(U.btns[0][0], "CLAIM TODAY", GREEN, ok)
     if U.dmsg_t > 0:
-        text(U.dmsg, F_M, GOLD_LIGHT, WIDTH // 2, 540, center=True)
-    text("ENTER: CLAIM TODAY'S REWARD    ESC: BACK", F_S, GRAY_L, WIDTH // 2, 668, center=True)
+        text(U.dmsg, F_M, GOLD_LIGHT, WIDTH // 2, 580, center=True)
+    if not ANDROID:
+        text("ENTER: CLAIM TODAY'S REWARD    ESC: BACK", F_S, GRAY_L, WIDTH // 2, 676, center=True)
+    draw_back_btn()
 
 
-# ================= الإعلانات الاختيارية (Rewarded Ads) =================
-# لا تُمنح أي مكافأة بمجرد الضغط على الزر؛ يجب أن يؤكد جسر AdMob
-# اكتمال مشاهدة الإعلان. ملف الجسر الأصلي يُضاف عند ربط SDK الخاص بأندرويد.
+# ================= الإعلانات الاختيارية =================
 ADS_RESULT_EVENT = pygame.USEREVENT + 17
 
+
 def request_rewarded_ad(placement):
-    """يطلب إعلاناً مكافئاً من جسر أندرويد، ويرجع False إن لم يكن الجسر جاهزاً."""
+    """يطلب إعلاناً مكافئاً من جسر أندرويد. لا مكافأة إلا بعد تأكيد المشاهدة الكاملة."""
     if U.ad_pending:
         return False
+    if ADS_TEST_MODE:
+        U.ad_pending = True
+        U.ad_msg = "TEST AD PLAYING..."
+        U.ad_test = (placement, 180)
+        return True
     try:
-        # الجسر يضاف فقط في نسخة Android المربوطة بـ AdMob؛ لا ينبغي
-        # أن يمنع غيابه بناء اللعبة أو تشغيلها على الكمبيوتر.
         starfall_ads_native = importlib.import_module("starfall_ads_native")
+
         def finished(watched_completely):
             try:
                 pygame.event.post(pygame.event.Event(
-                    ADS_RESULT_EVENT,
-                    placement=placement,
-                    rewarded=bool(watched_completely)))
+                    ADS_RESULT_EVENT, placement=placement, rewarded=bool(watched_completely)))
             except Exception:
                 pass
         started = starfall_ads_native.show_rewarded_ad(placement, finished)
@@ -4418,14 +4843,15 @@ def request_rewarded_ad(placement):
 
 
 def request_crystal_ad():
-    """يطلب إعلاناً مكافئاً يمنح 25 كريستالة بعد تأكيد المشاهدة الكاملة."""
-    if U.crystal_ad_count >= 5:
-        U.ad_msg = "DAILY CRYSTAL ADS USED"
-        return False
-    return request_rewarded_ad("crystal_reward")
+    if ad_used_today() >= AD_DAILY_MAX:
+        U.ad_msg = "DAILY AD LIMIT REACHED"
+        return U.ad_msg
+    if request_rewarded_ad("crystal_reward"):
+        return "LOADING REWARDED AD..."
+    return U.ad_msg
+
 
 def draw_ad_actions():
-    """أزرار اختيارية تظهر بعد الخسارة أو إنهاء المرحلة، وتعمل باللمس والفأرة."""
     U.ad_rects = []
     if U.state not in ("dead", "clear", "win"):
         return
@@ -4459,6 +4885,7 @@ def draw_ad_actions():
         text(U.ad_msg, F_S, GOLD_LIGHT if "NOT CONNECTED" not in U.ad_msg else RED_LIGHT,
              WIDTH // 2, 635, center=True)
 
+
 def handle_ad_action(action):
     if action == "dead_ad" and U.state == "dead" and not U.dead_ad_used:
         request_rewarded_ad("continue_after_defeat")
@@ -4472,7 +4899,7 @@ def handle_ad_action(action):
     elif action == "win_menu" and U.state == "win":
         go_menu()
 
-# شاشة نصية فوق المشهد (إنهاء مرحلة / خسارة / فوز)
+
 def draw_center_screen(title, tcol, lines, hint):
     game.draw()
     ov = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
@@ -4485,9 +4912,8 @@ def draw_center_screen(title, tcol, lines, hint):
         y += 38
     text(hint, F_S, GRAY_L, WIDTH // 2, y + 40, center=True)
 
-# ================= الإدخال (لوحة المفاتيح والفأرة) =================
 
-# تنفيذ اختيار من القائمة الرئيسية
+# ================= الإدخال =================
 def menu_activate():
     row = MENU_ROWS[U.sel["menu"]]
     sfx("click")
@@ -4499,12 +4925,9 @@ def menu_activate():
         save["two_players"] = not save["two_players"]
         write_save()
     elif row == "shop":
-        U.shop_back = "menu"
-        U.state = "shop"
+        open_shop("menu")
     elif row == "recharge":
-        U.recharge_back = "menu"
-        U.code = ""
-        U.state = "recharge"
+        open_recharge("menu")
     elif row == "pass":
         U.pass_view = max(1, min(PASS_TIERS - 7, pass_tier() - 1))
         U.state = "pass"
@@ -4515,7 +4938,10 @@ def menu_activate():
         U.state = "settings"
     elif row == "new":
         if U.confirm:
-            keep = {k: save[k] for k in ("high_score", "sfx", "music", "difficulty", "shake", "autofire", "two_players", "binds")}
+            # يحتفظ بكل ما اشتراه اللاعب بمال حقيقي (كريستال، VIP، تذكرة، أكواد مستعملة)
+            keep = {k: save[k] for k in ("high_score", "sfx", "music", "difficulty", "shake", "autofire",
+                                         "two_players", "binds", "crystals", "used_codes", "purchases",
+                                         "vip_until", "pass_prem", "ad_date", "ad_count")}
             save.clear()
             save.update(default_save())
             save.update(keep)
@@ -4528,8 +4954,10 @@ def menu_activate():
     elif row == "quit":
         U.running = False
 
+
 def settings_activate():
     change_setting(SET_ROWS[U.sel["settings"]], 0)
+
 
 def shop_activate():
     items = page_items()
@@ -4538,16 +4966,18 @@ def shop_activate():
         U.msg = shop_buy(items[n])
         U.msg_t = 90
 
+
 def set_page(d):
     U.page = (U.page + d) % len(SHOP_PAGES)
     U.sel["shop"] = 0
+    U.scroll = 0
     sfx("click")
 
-# معالجة ضغط المفاتيح حسب حالة اللعبة (قائمة / لعب / إيقاف / متجر / ...)
+
 def key_down(key):
     st = U.state
     b = save["binds"]
-    if key == pygame.K_F11:
+    if key == pygame.K_F11 and not ANDROID:
         pygame.display.toggle_fullscreen()
         return
     if U.rebind:
@@ -4611,35 +5041,23 @@ def key_down(key):
         elif key in (pygame.K_e, pygame.K_TAB):
             set_page(1)
         elif key == pygame.K_r:
-            U.recharge_back = "shop"
-            U.code = ""
-            U.state = "recharge"
+            open_recharge("shop")
         elif key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             shop_activate()
         elif pygame.K_1 <= key <= pygame.K_9:
-            if key - pygame.K_1 < n:
-                U.sel["shop"] = key - pygame.K_1
+            idx = (U.scroll * 3) + (key - pygame.K_1)
+            if idx < n:
+                U.sel["shop"] = idx
                 shop_activate()
         elif key in (pygame.K_ESCAPE, pygame.K_b):
             write_save()
             U.state = U.shop_back
     elif st == "recharge":
         if key == pygame.K_ESCAPE:
-            U.state = U.recharge_back
+            close_recharge()
         elif key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            if U.code:
-                ok, U.rmsg = redeem_code(U.code)
-                U.rmsg_ok = ok
-                if ok:
-                    U.code = ""
-                    sfx("crystal")
-                else:
-                    sfx("deny")
-            else:  # بلا كود: زر الشراء للمنتج المحدد
-                U.rmsg = request_purchase(CODE_SKUS[U.sel["recharge"]])
-                U.rmsg_ok = True
-            U.rmsg_t = 300
-        elif key in (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT):
+            recharge_submit()
+        elif key in (pygame.K_UP, pygame.K_DOWN, pygame.K_LEFT, pygame.K_RIGHT) and not ANDROID:
             d = {pygame.K_UP: -1, pygame.K_DOWN: 1, pygame.K_LEFT: -5, pygame.K_RIGHT: 5}[key]
             U.sel["recharge"] = (U.sel["recharge"] + d) % len(CODE_SKUS)
         elif key == pygame.K_BACKSPACE:
@@ -4653,31 +5071,23 @@ def key_down(key):
         if key == pygame.K_ESCAPE:
             U.state = "menu"
         elif key == pygame.K_UP:
-            U.pass_view = max(1, U.pass_view - 1)
+            pass_do("up")
         elif key == pygame.K_DOWN:
-            U.pass_view = min(PASS_TIERS - 7, U.pass_view + 1)
+            pass_do("down")
         elif key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            n = claim_pass()
-            U.dmsg = "CLAIMED %d REWARDS" % n if n else "NOTHING TO CLAIM"
-            U.dmsg_t = 200
-            sfx("powerup" if n else "deny")
+            pass_do("claim")
         elif key == pygame.K_F1:
-            U.recharge_back = "pass"
-            U.state = "recharge"
-            U.code = ""
+            pass_do("store")
     elif st == "daily":
         if key == pygame.K_ESCAPE:
             U.state = "menu"
         elif key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-            U.dmsg = claim_daily()
-            U.dmsg_t = 240
-            sfx("powerup" if U.dmsg.startswith("CLAIMED") else "deny")
+            pass_do("daily")
     elif st == "playing":
         if key == b["pause"] or key == pygame.K_ESCAPE:
             U.state = "pause"
         elif key == pygame.K_b:
-            U.shop_back = "pause"
-            U.state = "shop"
+            open_shop("pause")
         elif key == b["shield"]:
             game.players[0].toggle_shield()
         elif key == pygame.K_RSHIFT and len(game.players) > 1:
@@ -4696,8 +5106,7 @@ def key_down(key):
         if key in (b["pause"], pygame.K_ESCAPE, pygame.K_RETURN):
             U.state = "playing"
         elif key == pygame.K_b:
-            U.shop_back = "pause"
-            U.state = "shop"
+            open_shop("pause")
         elif key == pygame.K_o:
             U.shop_back = "pause"
             U.state = "settings"
@@ -4710,8 +5119,7 @@ def key_down(key):
             game.start_level(game.level + 1)
             U.state = "playing"
         elif key == pygame.K_b:
-            U.shop_back = "clear"
-            U.state = "shop"
+            open_shop("clear")
         elif key in (pygame.K_m, pygame.K_ESCAPE):
             go_menu()
     elif st == "dead":
@@ -4720,8 +5128,7 @@ def key_down(key):
         elif key in (pygame.K_r, pygame.K_RETURN):
             start_run(game.level)
         elif key == pygame.K_b:
-            U.shop_back = "dead"
-            U.state = "shop"
+            open_shop("dead")
         elif key in (pygame.K_m, pygame.K_ESCAPE):
             go_menu()
     elif st == "win":
@@ -4730,8 +5137,8 @@ def key_down(key):
         elif key in (pygame.K_RETURN, pygame.K_m, pygame.K_ESCAPE):
             go_menu()
 
+
 def clipboard_text():
-    """يقرأ نص الحافظة (للصق كود الشحن) إن توفر tkinter."""
     try:
         tkinter = importlib.import_module("tkinter")
         r = tkinter.Tk()
@@ -4744,8 +5151,8 @@ def clipboard_text():
 
 
 def char_input(ev):
-    """إدخال الحروف في شاشة الشحن (Ctrl+V للصق)."""
-    if U.state != "recharge":
+    """كتابة كود الشحن على الكمبيوتر (على الهاتف تُستعمل أحداث TEXTINPUT)."""
+    if U.state != "recharge" or ANDROID:
         return
     if ev.mod & pygame.KMOD_CTRL and ev.key == pygame.K_v:
         U.code = "".join(c for c in clipboard_text().upper() if c.isalnum() or c == "-")[:28]
@@ -4755,22 +5162,54 @@ def char_input(ev):
         U.code += ch
 
 
-# دعم الفأرة في القوائم والمتجر
 def mouse_event(ev):
     st = U.state
-    if st in ("shop", "recharge") and ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-        if TOUCH_BACK_RECT.collidepoint(ev.pos):
-            write_save()
-            U.state = U.shop_back if st == "shop" else U.recharge_back
-            sfx("click")
-            return
-    if st == "recharge":
-        if ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-            if U.recharge_ad_rect and U.recharge_ad_rect.collidepoint(ev.pos):
-                request_crystal_ad()
-                return
+    touch = getattr(ev, "touch", False)
+    down = ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1
+    if down and st in ("shop", "recharge", "pass", "daily") and back_hit(ev.pos):
+        write_save()
+        sfx("click")
+        if st == "shop":
+            U.state = U.shop_back
+        elif st == "recharge":
+            close_recharge()
+        else:
+            U.state = "menu"
         return
-    if st in ("dead", "clear", "win") and ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+    if st in ("pass", "daily"):
+        if down:
+            for r, a in U.btns:
+                if r.collidepoint(ev.pos):
+                    pass_do(a)
+                    return
+        return
+    if st == "recharge":
+        if down:
+            pos = ev.pos
+            if U.recharge_ad_rect and U.recharge_ad_rect.collidepoint(pos):
+                U.rmsg = request_crystal_ad()
+                U.rmsg_ok = True
+                U.rmsg_t = 240
+                return
+            if U.redeem_rect and U.redeem_rect.collidepoint(pos):
+                if U.code:
+                    recharge_submit()
+                else:
+                    U.rmsg, U.rmsg_ok, U.rmsg_t = "TYPE YOUR CODE FIRST", False, 200
+                    text_input(True)
+                return
+            if U.code_rect and U.code_rect.collidepoint(pos):
+                text_input(True)
+                return
+            for r, i in U.rects:
+                if r.collidepoint(pos):
+                    U.sel["recharge"] = i
+                    U.rmsg = request_purchase(CODE_SKUS[i])
+                    U.rmsg_ok = True
+                    U.rmsg_t = 300
+                    return
+        return
+    if st in ("dead", "clear", "win") and down:
         for rect, action in U.ad_rects:
             if rect.collidepoint(ev.pos):
                 handle_ad_action(action)
@@ -4778,31 +5217,53 @@ def mouse_event(ev):
         return
     if st not in ("menu", "settings", "shop"):
         return
-    key = "menu" if st == "menu" else "settings" if st == "settings" else "shop"
-    if st == "shop" and ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+    key = st
+    if st == "shop" and down:
         for r, pi in U.tabs:
             if r.collidepoint(ev.pos):
                 U.page = pi
                 U.sel["shop"] = 0
+                U.scroll = 0
                 sfx("click")
+                return
+        for r, d in U.scroll_rects:
+            if r.collidepoint(ev.pos):
+                move_shop_sel(d)
                 return
     for r, i in U.rects:
         if r.collidepoint(ev.pos):
             if ev.type == pygame.MOUSEMOTION:
                 U.sel[key] = i
-            elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+            elif down:
+                if st == "shop" and touch and U.sel["shop"] != i:
+                    U.sel["shop"] = i          # الضغطة الأولى تحدد فقط، والثانية تشتري
+                    sfx("click")
+                    return
                 U.sel[key] = i
                 if st == "menu":
+                    if MENU_ROWS[i] == "play":
+                        third = r.w // 3
+                        if ev.pos[0] < r.x + third:
+                            U.menu_level = clamp(U.menu_level - 1, 1, save["level"])
+                            sfx("click")
+                            return
+                        if ev.pos[0] > r.right - third:
+                            U.menu_level = clamp(U.menu_level + 1, 1, save["level"])
+                            sfx("click")
+                            return
                     menu_activate()
                 elif st == "settings":
-                    settings_activate()
+                    row = SET_ROWS[i]
+                    if row in ("sfx", "music", "difficulty"):
+                        change_setting(row, -1 if ev.pos[0] < r.centerx else 1)
+                    else:
+                        settings_activate()
                 else:
                     shop_activate()
             break
 
-# ================= الانتقال بين المراحل =================
 
-# عند إنهاء المرحلة: مكافأة + حفظ التقدم + فتح المرحلة التالية
+# ================= نهاية المرحلة =================
 def on_level_clear():
     U.reward_doubled = False
     U.ad_msg = ""
@@ -4821,7 +5282,7 @@ def on_level_clear():
     set_music("calm")
     U.state = "win" if lvl >= MAX_LEVEL else "clear"
 
-# عند موت كل اللاعبين: حفظ أعلى نتيجة (العملات والترقيات تبقى)
+
 def on_dead():
     if game.score > save["high_score"]:
         save["high_score"] = game.score
@@ -4831,29 +5292,27 @@ def on_dead():
     U.state = "dead"
 
 
-# ================= التحكم باللمس (أندرويد) =================
+# ================= اللمس (أندرويد) =================
 TOUCH = SimpleNamespace(last=None, fingers={})
-TOUCH_BACK_RECT = pygame.Rect(WIDTH - 150, HEIGHT - 58, 130, 42)
 TBTN = [("shield", "SHD", pygame.Rect(WIDTH - 90, HEIGHT - 150, 78, 60)),
         ("special", "SPC", pygame.Rect(WIDTH - 90, HEIGHT - 220, 78, 60)),
         ("bomb", "BMB", pygame.Rect(WIDTH - 90, HEIGHT - 290, 78, 60)),
         ("weapon", "WPN", pygame.Rect(12, HEIGHT - 150, 78, 60)),
         ("pause", "II", pygame.Rect(12, HEIGHT - 220, 78, 60)),
         ("shop", "SHOP", pygame.Rect(12, HEIGHT - 290, 78, 60))]
-
 TPAUSE = [("resume", "RESUME", pygame.Rect(WIDTH // 2 - 180, 430, 160, 52)),
           ("shop", "SHOP", pygame.Rect(WIDTH // 2 + 20, 430, 160, 52)),
           ("settings", "SETTINGS", pygame.Rect(WIDTH // 2 - 180, 500, 160, 52)),
           ("menu", "MENU", pygame.Rect(WIDTH // 2 + 20, 500, 160, 52))]
 
+
 def finger_pos(ev):
-    ww, wh = pygame.display.get_window_size()
-    # في Android نمدد canvas إلى مساحة النافذة كاملة، لذلك لا توجد حواف
-    # letterbox ويصبح التحويل خطياً ومباشراً.
-    return ev.x * ww * WIDTH / float(max(1, ww)), ev.y * wh * HEIGHT / float(max(1, wh))
+    """يحوّل إحداثيات اللمس (0..1 على كامل الشاشة) إلى إحداثيات اللوحة 900x700 مع مراعاة الهوامش."""
+    ww, wh = window.get_size()
+    return (ev.x * ww - VIEW.ox) / VIEW.scale, (ev.y * wh - VIEW.oy) / VIEW.scale
+
 
 def touch_event(ev):
-    """زر = إجراء، وأي مكان آخر = سحب لتحريك المركبة. خارج اللعب يعمل اللمس كفأرة."""
     fid = ev.finger_id
     x, y = finger_pos(ev)
     if ev.type == pygame.FINGERDOWN:
@@ -4868,8 +5327,7 @@ def touch_event(ev):
                     elif name == "bomb":
                         game.use_bomb()
                     elif name == "shop":
-                        U.shop_back = "pause"
-                        U.state = "shop"
+                        open_shop("pause")
                     else:
                         key_down(save["binds"].get(name, pygame.K_p))
                     return
@@ -4882,28 +5340,39 @@ def touch_event(ev):
                     if name == "resume":
                         U.state = "playing"
                     elif name == "shop":
-                        U.shop_back = "pause"
-                        U.state = "shop"
+                        open_shop("pause")
                     elif name == "settings":
                         U.shop_back = "pause"
                         U.state = "settings"
                     elif name == "menu":
                         go_menu()
                     return
+        elif U.state == "shop":
+            TOUCH.fingers[fid] = ["shop", x, y, False]
         else:
             pos = (int(x), int(y))
-            mouse_event(pygame.event.Event(pygame.MOUSEMOTION, pos=pos))
-            mouse_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=pos, button=1))
+            mouse_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=pos, button=1, touch=True))
     elif ev.type == pygame.FINGERMOTION:
-        if TOUCH.fingers.get(fid) == "move" and TOUCH.last and game and game.players:
+        f = TOUCH.fingers.get(fid)
+        if f == "move" and TOUCH.last and game and game.players:
             dx, dy = x - TOUCH.last[0], y - TOUCH.last[1]
             TOUCH.last = (x, y)
             p = game.players[0]
             if p.alive:
                 p.x = clamp(p.x + dx * 1.6, 50, WIDTH - 50)
                 p.y = clamp(p.y + dy * 1.6, 140, HEIGHT - 60)
+        elif isinstance(f, list) and U.state == "shop":
+            dy = y - f[2]
+            if abs(dy) > 50:
+                move_shop_sel(-3 if dy > 0 else 3)
+                f[2] = y
+                f[3] = True
     elif ev.type == pygame.FINGERUP:
-        TOUCH.fingers.pop(fid, None)
+        f = TOUCH.fingers.pop(fid, None)
+        if isinstance(f, list) and not f[3] and U.state == "shop":
+            pos = (int(f[1]), int(f[2]))
+            mouse_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, pos=pos, button=1, touch=True))
+
 
 def draw_touch_buttons():
     for name, lab, r in TBTN:
@@ -4920,23 +5389,24 @@ def draw_pause_touch_buttons():
         pygame.draw.rect(canvas, (120, 200, 255), r, 2, border_radius=10)
         text(lab, F_S, WHITE, r.centerx, r.centery, center=True, shadow=False)
 
+
 # ================= التشغيل الرئيسي =================
 MENU_BOSS = None
 _menu_ship_cache = {}
 
+
 def get_menu_ship():
-    """صورة المركبة الكبيرة في القائمة (تتغير حسب المركبة المختارة)."""
     key = (save["ship"], save["skin"])
     if key not in _menu_ship_cache:
         _menu_ship_cache[key] = pygame.transform.smoothscale(get_player_sprite(0, key[0], 2, key[1]), (285, 255))
     return _menu_ship_cache[key]
+
 
 _scan_surf = None
 RED_VIG = None
 
 
 def make_red_vignette():
-    """وميض أحمر على الأطراف يظهر عند إصابة اللاعب."""
     sm = pygame.Surface((32, 24), pygame.SRCALPHA)
     for yy in range(24):
         for xx in range(32):
@@ -4953,7 +5423,6 @@ def make_scanlines():
 
 
 def post_fx(surf):
-    """مؤثرات ما بعد الرسم: توهج (Bloom) للأجزاء المضيئة + خطوط مسح سينمائية."""
     if save["bloom"]:
         small = pygame.transform.smoothscale(surf, (WIDTH // 4, HEIGHT // 4))
         small.fill((90, 90, 90), special_flags=pygame.BLEND_RGB_SUB)
@@ -4964,7 +5433,6 @@ def post_fx(surf):
         surf.blit(_scan_surf, (0, 0))
 
 
-# تجهيز كل الرسومات والأصوات عند بدء التشغيل (يستغرق عدة ثوانٍ)
 def init_assets():
     global space, HEART_ON, HEART_OFF, MISSILE_SPR, MENU_BOSS, MUSIC_CH, ENGINE_CH, game, DRONE_SPR, _scan_surf, RED_VIG
     show_loading("LOADING SPRITES...")
@@ -4994,48 +5462,68 @@ def init_assets():
     U.menu_level = save["level"]
     set_music("menu")
 
-# الحلقة الرئيسية للبرنامج: أحداث ثم تحديث ثم رسم
+
+def handle_ad_result(ev):
+    U.ad_pending = False
+    U.ad_test = None
+    if not getattr(ev, "rewarded", False):
+        U.ad_msg = "AD WAS NOT COMPLETED - NO REWARD"
+        return
+    placement = getattr(ev, "placement", "")
+    if placement == "continue_after_defeat" and U.state == "dead" and not U.dead_ad_used:
+        U.dead_ad_used = True
+        start_run(game.level, ad_continue=True)
+        U.dead_ad_used = True
+    elif placement == "double_level_coins" and U.state in ("clear", "win") and not U.reward_doubled:
+        save["coins"] += int(game.earned)
+        game.earned *= 2
+        U.reward_doubled = True
+        U.ad_msg = "COINS DOUBLED!"
+        write_save()
+        sfx("coin")
+    elif placement == "crystal_reward" and U.state in ("recharge", "shop"):
+        save["crystals"] += AD_CRYSTALS
+        ad_register()
+        U.ad_msg = ""
+        U.rmsg = "%d NOVA CRYSTALS ADDED!" % AD_CRYSTALS
+        U.rmsg_ok = True
+        U.rmsg_t = 240
+        U.msg = "+%d CRYSTALS!" % AD_CRYSTALS
+        U.msg_t = 150
+        write_save()
+        sfx("crystal")
+
+
 def main():
     init_assets()
     while U.running:
         clock.tick(FPS)
         for ev in pygame.event.get():
             if ev.type == ADS_RESULT_EVENT:
-                U.ad_pending = False
-                if getattr(ev, "rewarded", False):
-                    placement = getattr(ev, "placement", "")
-                    if placement == "continue_after_defeat" and U.state == "dead" and not U.dead_ad_used:
-                        U.dead_ad_used = True
-                        start_run(game.level, ad_continue=True)
-                        U.dead_ad_used = True
-                    elif placement == "double_level_coins" and U.state in ("clear", "win") and not U.reward_doubled:
-                        # game.earned يحتوي بالفعل على قيمة العملات المضافة بعد المضاعفات والترقيات.
-                        save["coins"] += int(game.earned)
-                        game.earned *= 2
-                        U.reward_doubled = True
-                        U.ad_msg = "COINS DOUBLED!"
-                        write_save()
-                        sfx("coin")
-                    elif placement == "crystal_reward" and U.state == "recharge":
-                        save["crystals"] += 25
-                        U.crystal_ad_count += 1
-                        U.rmsg = "25 NOVA CRYSTALS ADDED!"
-                        U.rmsg_ok = True
-                        U.rmsg_t = 240
-                        write_save()
-                        sfx("crystal")
-                else:
-                    U.ad_msg = "AD WAS NOT COMPLETED - NO REWARD"
+                handle_ad_result(ev)
             elif ev.type == pygame.QUIT:
                 U.running = False
             elif ev.type == pygame.KEYDOWN:
                 key_down(ev.key)
                 char_input(ev)
+            elif ev.type == pygame.TEXTINPUT:
+                if ANDROID and U.state == "recharge":
+                    for c in ev.text.upper():
+                        if (c.isalnum() or c == "-") and len(U.code) < 28:
+                            U.code += c
             elif ev.type in (pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP):
                 touch_event(ev)
             elif ev.type in (pygame.MOUSEMOTION, pygame.MOUSEBUTTONDOWN):
                 if not ANDROID:
                     mouse_event(ev)
+        if U.ad_test:
+            pl, cnt = U.ad_test
+            cnt -= 1
+            if cnt <= 0:
+                U.ad_test = None
+                pygame.event.post(pygame.event.Event(ADS_RESULT_EVENT, placement=pl, rewarded=True))
+            else:
+                U.ad_test = (pl, cnt)
         st = U.state
         set_engine(st == "playing")
         if U.msg_t > 0:
@@ -5053,10 +5541,11 @@ def main():
             ov.fill((0, 0, 0, 170))
             canvas.blit(ov, (0, 0))
             text("PAUSED", F_XL, GOLD, WIDTH // 2, 240, center=True)
-            text("P / ESC / ENTER: RESUME", F_M, WHITE, WIDTH // 2, 320, center=True)
-            text("B: SHOP    O: SETTINGS    M: MAIN MENU (SAVES)", F_M, WHITE, WIDTH // 2, 360, center=True)
             if ANDROID:
                 draw_pause_touch_buttons()
+            else:
+                text("P / ESC / ENTER: RESUME", F_M, WHITE, WIDTH // 2, 320, center=True)
+                text("B: SHOP    O: SETTINGS    M: MAIN MENU (SAVES)", F_M, WHITE, WIDTH // 2, 360, center=True)
         elif st == "clear":
             space.update(2.0)
             draw_center_screen("LEVEL %d CLEAR!" % game.level, GREEN,
@@ -5065,7 +5554,7 @@ def main():
                                 ("SCORE: %d" % game.score, WHITE),
                                 ("NEXT: LEVEL %d%s" % (game.level + 1, "  (BOSS!)" if (game.level + 1) % BOSS_EVERY == 0 else ""), CYAN),
                                 ("PROGRESS SAVED", GRAY_L)],
-                               "ENTER: NEXT LEVEL     B: SHOP     M: MENU")
+                               "" if ANDROID else "ENTER: NEXT LEVEL     B: SHOP     M: MENU")
             draw_ad_actions()
         elif st == "dead":
             space.update(1.0)
@@ -5074,7 +5563,7 @@ def main():
                                 ("SCORE: %d" % game.score, WHITE),
                                 ("HIGH SCORE: %d" % save["high_score"], GOLD),
                                 ("YOUR COINS AND UPGRADES ARE KEPT", CYAN)],
-                               "R / ENTER: RETRY THIS LEVEL     B: SHOP     M: MENU")
+                               "" if ANDROID else "R / ENTER: RETRY THIS LEVEL     B: SHOP     M: MENU")
             draw_ad_actions()
         elif st == "win":
             space.update(1.0)
@@ -5082,7 +5571,7 @@ def main():
                                [("ALL %d LEVELS COMPLETED" % MAX_LEVEL, CYAN),
                                 ("THE GALAXY IS SAFE", WHITE),
                                 ("FINAL SCORE: %d" % game.score, GOLD_LIGHT)],
-                               "ENTER: MAIN MENU")
+                               "" if ANDROID else "ENTER: MAIN MENU")
             draw_ad_actions()
         elif st == "menu":
             space.update(1.0)
@@ -5113,18 +5602,11 @@ def main():
         if ANDROID and st == "playing":
             draw_touch_buttons()
         post_fx(canvas)
-        window.fill((0, 0, 0))
-        if ANDROID:
-            # تمديد اللوحة المنطقية إلى كامل شاشة الهاتف بدلاً من ترك أشرطة سوداء.
-            ww, wh = window.get_size()
-            full_frame = pygame.transform.scale(canvas, (ww, wh))
-            window.blit(full_frame, (0, 0))
-        else:
-            window.blit(canvas, (sx, sy))
-        pygame.display.flip()
+        present(sx, sy)
     write_save()
     pygame.quit()
     sys.exit()
+
 
 if __name__ == "__main__":
     main()
