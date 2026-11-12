@@ -1,6 +1,8 @@
 
 from jnius import autoclass, PythonJavaClass, java_method
-from android.activity import mActivity
+
+
+PythonActivity = autoclass('org.kivy.android.PythonActivity')
 
 
 class RewardCallback(PythonJavaClass):
@@ -19,16 +21,26 @@ class RewardCallback(PythonJavaClass):
 
 def show_rewarded_ad(placement, callback):
     try:
+        activity = PythonActivity.mActivity
+
+        if activity is None:
+            raise RuntimeError("Android activity is unavailable")
+
         bridge = autoclass('org.starfall.starfall.StarfallAdsBridge')
         java_callback = RewardCallback(callback)
+
         bridge.showRewardedAd(
-            mActivity,
+            activity,
             str(placement),
             java_callback
         )
+
         return True
+
     except Exception as error:
-        print("AdMob error:", error)
+        print("AdMob error:", repr(error))
+
         if callback:
             callback(False)
+
         return False
