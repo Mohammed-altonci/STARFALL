@@ -250,8 +250,8 @@ STORE_URL = "https://example.com/starfall-store"
 PURCHASE_MODE = "codes"          # "codes" أو "play"
 PLAY_BILLING_HOOK = None
 ADS_TEST_MODE = False            # True = يحاكي إعلاناً مدته 3 ثوانٍ للتجربة فقط (لا تنشر اللعبة بها!)
-AD_CRYSTALS = 25                 # كريستال لكل إعلان
-AD_DAILY_MAX = 5                 # أقصى عدد إعلانات يومياً
+AD_CRYSTALS = 20                 # كريستال لكل إعلان مكتمل
+AD_DAILY_MAX = 20                # أقصى عدد إعلانات مكتملة يومياً
 
 CODE_SKUS = ["crystals_100", "crystals_300", "crystals_700", "crystals_1500", "crystals_4000", "crystals_10000",
              "starter_pack", "vip_30d", "battle_pass", "mega_pack"]
@@ -4386,6 +4386,7 @@ U = SimpleNamespace(state="menu", sel=dict(menu=0, shop=0, settings=0, recharge=
                     pass_view=1, dmsg="", dmsg_t=0, code="", rmsg="", rmsg_ok=False, rmsg_t=0, recharge_back="menu",
                     confirm=False, rebind=None, msg="", msg_t=0, rects=[], running=True,
                     shop_back="menu", earned=0, ad_rects=[], ad_pending=False, ad_msg="", dead_ad_used=False,
+                    ad_seq=0, ad_active=None, ad_done=[],
                     reward_doubled=False, recharge_ad_rect=None, redeem_rect=None, code_rect=None,
                     scroll=0, scroll_rects=[], btns=[], ad_test=None)
 MENU_ROWS = ["play", "mode", "shop", "recharge", "pass", "daily", "settings", "new", "quit"]
@@ -4843,13 +4844,17 @@ ADS_RESULT_EVENT = pygame.USEREVENT + 17
 
 
 def request_rewarded_ad(placement):
-    """يطلب إعلاناً مكافئاً من جسر أندرويد. لا مكافأة إلا بعد تأكيد المشاهدة الكاملة."""
+    """يطلب إعلاناً مكافئاً من جسر أندرويد. لا مكافأة إلا بعد تأكيد المشاهدة الكاملة.
+    كل طلب يحصل على رقم تعريف فريد (token) يُرسل مع النتيجة لمنع معالجتها أكثر من مرة."""
     if U.ad_pending:
         return False
+    U.ad_seq += 1
+    token = U.ad_seq
     if ADS_TEST_MODE:
         U.ad_pending = True
+        U.ad_active = token
         U.ad_msg = "TEST AD PLAYING..."
-        U.ad_test = (placement, 180)
+        U.ad_test = (placement, 180, token)
         return True
     try:
         starfall_ads_native = importlib.import_module("starfall_ads_native")
@@ -4857,18 +4862,20 @@ def request_rewarded_ad(placement):
         def finished(watched_completely):
             try:
                 pygame.event.post(pygame.event.Event(
-                    ADS_RESULT_EVENT, placement=placement, rewarded=bool(watched_completely)))
+                    ADS_RESULT_EVENT, placement=placement, rewarded=bool(watched_completely), token=token))
             except Exception:
                 pass
         started = starfall_ads_native.show_rewarded_ad(placement, finished)
         if started:
             U.ad_pending = True
+            U.ad_active = token
             U.ad_msg = "LOADING REWARDED AD..."
             return True
     except Exception:
         pass
     U.ad_msg = "REWARDED ADS ARE NOT CONNECTED YET"
     U.ad_pending = False
+    U.ad_active = None
     return False
 
 
@@ -5516,6 +5523,17 @@ def draw_ui_state(fn):
 
 
 def handle_ad_result(ev):
+    """يعالج نتيجة إعلان واحد مرة واحدة فقط.
+    - إشعار مكرر أو نتيجة لا تخص الإعلان الحالي تُتجاهل.
+    - لا مكافأة إن لم يكتمل الإعلان.
+    - المكافأة تُمنح حتى لو غادر اللاعب الشاشة أثناء الإعلان."""
+    token = getattr(ev, "token", None)
+    if token is None or token != U.ad_active or token in U.ad_done:
+        return
+    U.ad_done.append(token)
+    if len(U.ad_done) > 200:
+        del U.ad_done[:100]
+    U.ad_active = None
     U.ad_pending = False
     U.ad_test = None
     if not getattr(ev, "rewarded", False):
@@ -5533,7 +5551,10 @@ def handle_ad_result(ev):
         U.ad_msg = "COINS DOUBLED!"
         write_save()
         sfx("coin")
-    elif placement == "crystal_reward" and U.state in ("recharge", "shop"):
+    elif placement == "crystal_reward":
+        if ad_used_today() >= AD_DAILY_MAX:
+            U.ad_msg = "DAILY AD LIMIT REACHED"
+            return
         save["crystals"] += AD_CRYSTALS
         ad_register()
         U.ad_msg = ""
@@ -5569,13 +5590,13 @@ def main():
                 if not ANDROID:
                     mouse_event(ev)
         if U.ad_test:
-            pl, cnt = U.ad_test
+            pl, cnt, tk = U.ad_test
             cnt -= 1
             if cnt <= 0:
                 U.ad_test = None
-                pygame.event.post(pygame.event.Event(ADS_RESULT_EVENT, placement=pl, rewarded=True))
+                pygame.event.post(pygame.event.Event(ADS_RESULT_EVENT, placement=pl, rewarded=True, token=tk))
             else:
-                U.ad_test = (pl, cnt)
+                U.ad_test = (pl, cnt, tk)
         st = U.state
         set_engine(st == "playing")
         if U.msg_t > 0:
