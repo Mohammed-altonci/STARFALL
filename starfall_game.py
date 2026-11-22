@@ -20,7 +20,6 @@ import math
 import sys
 import os
 import json
-import re
 import array
 import hashlib
 import hmac
@@ -92,29 +91,12 @@ UI_OX = (WIDTH - DESIGN_W) // 2
 ui_canvas = pygame.Surface((DESIGN_W, HEIGHT)) if WIDTH != DESIGN_W else canvas
 clock = pygame.time.Clock()
 
-_FN = "tahoma,arial,dejavusans,consolas,couriernew,monospace"
-# خط عربي اختياري: ضع الملف fonts/NotoNaskhArabic-Bold.ttf بجانب اللعبة (ضروري على أندرويد)
-try:
-    _FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
-except NameError:
-    _FONT_DIR = os.path.join(os.getcwd(), "fonts")
-_AR_FONT_FILE = os.path.join(_FONT_DIR, "NotoNaskhArabic-Bold.ttf")
-
-
-def make_font(size):
-    if os.path.exists(_AR_FONT_FILE):
-        try:
-            return pygame.font.Font(_AR_FONT_FILE, size)
-        except Exception:
-            pass
-    return pygame.font.SysFont(_FN, size, bold=True)
-
-
-F_S = make_font(18)
-F_M = make_font(24)
-F_L = make_font(38)
-F_XL = make_font(62)
-F_T = make_font(84)
+_FN = "consolas,dejavusansmono,couriernew,monospace"
+F_S = pygame.font.SysFont(_FN, 22, bold=True)
+F_M = pygame.font.SysFont(_FN, 28, bold=True)
+F_L = pygame.font.SysFont(_FN, 42, bold=True)
+F_XL = pygame.font.SysFont(_FN, 62, bold=True)
+F_T = pygame.font.SysFont(_FN, 84, bold=True)
 
 # ================= الألوان =================
 BLACK = (5, 7, 18)
@@ -171,7 +153,7 @@ def default_save():
                 drones=0, revives=0, bombs=0,
                 crystals=0, used_codes=[], aegis=0, coin2=False, drone2=False,
                 skins=["classic"], skin="classic", trails=["cyan"], trail="cyan",
-                bloom=True, scan=True, lang="en",
+                bloom=True, scan=True,
                 vip_until=0, daily_last=0, daily_day=0, pass_xp=0, pass_prem=False,
                 pass_free=[], pass_paid=[], purchases=[], ad_date=0, ad_count=0,
                 binds=dict(DEFAULT_BINDS))
@@ -198,7 +180,6 @@ def load_save():
         base["difficulty"] = clamp(int(base["difficulty"]), 0, 2)
         base["sfx"] = clamp(int(base["sfx"]), 0, 10)
         base["music"] = clamp(int(base["music"]), 0, 10)
-        base["lang"] = base["lang"] if base["lang"] in ("en", "ar") else "en"
         for k, hi in (("speed_lv", 5), ("regen_lv", 5), ("coin_lv", 10), ("luck_lv", 10),
                       ("firerate_lv", 10), ("spower_lv", 10), ("drones", 3),
                       ("revives", 9), ("bombs", 9), ("magnet_lv", 5), ("crit_lv", 10),
@@ -491,265 +472,31 @@ def shade(c, f):
             clamp(int(c[2] * f), 0, 255))
 
 
-
-# ================= دعم اللغة العربية =================
-# تشكيل الحروف (اتصال الحروف بأشكالها الصحيحة) + ترتيب النص من اليمين لليسار
-_AR_FORMS = {
-    'ء': ('\ufe80', None, None, None), 'آ': ('\ufe81', '\ufe82', None, None),
-    'أ': ('\ufe83', '\ufe84', None, None), 'ؤ': ('\ufe85', '\ufe86', None, None),
-    'إ': ('\ufe87', '\ufe88', None, None), 'ئ': ('\ufe89', '\ufe8a', '\ufe8b', '\ufe8c'),
-    'ا': ('\ufe8d', '\ufe8e', None, None), 'ب': ('\ufe8f', '\ufe90', '\ufe91', '\ufe92'),
-    'ة': ('\ufe93', '\ufe94', None, None), 'ت': ('\ufe95', '\ufe96', '\ufe97', '\ufe98'),
-    'ث': ('\ufe99', '\ufe9a', '\ufe9b', '\ufe9c'), 'ج': ('\ufe9d', '\ufe9e', '\ufe9f', '\ufea0'),
-    'ح': ('\ufea1', '\ufea2', '\ufea3', '\ufea4'), 'خ': ('\ufea5', '\ufea6', '\ufea7', '\ufea8'),
-    'د': ('\ufea9', '\ufeaa', None, None), 'ذ': ('\ufeab', '\ufeac', None, None),
-    'ر': ('\ufead', '\ufeae', None, None), 'ز': ('\ufeaf', '\ufeb0', None, None),
-    'س': ('\ufeb1', '\ufeb2', '\ufeb3', '\ufeb4'), 'ش': ('\ufeb5', '\ufeb6', '\ufeb7', '\ufeb8'),
-    'ص': ('\ufeb9', '\ufeba', '\ufebb', '\ufebc'), 'ض': ('\ufebd', '\ufebe', '\ufebf', '\ufec0'),
-    'ط': ('\ufec1', '\ufec2', '\ufec3', '\ufec4'), 'ظ': ('\ufec5', '\ufec6', '\ufec7', '\ufec8'),
-    'ع': ('\ufec9', '\ufeca', '\ufecb', '\ufecc'), 'غ': ('\ufecd', '\ufece', '\ufecf', '\ufed0'),
-    'ف': ('\ufed1', '\ufed2', '\ufed3', '\ufed4'), 'ق': ('\ufed5', '\ufed6', '\ufed7', '\ufed8'),
-    'ك': ('\ufed9', '\ufeda', '\ufedb', '\ufedc'), 'ل': ('\ufedd', '\ufede', '\ufedf', '\ufee0'),
-    'م': ('\ufee1', '\ufee2', '\ufee3', '\ufee4'), 'ن': ('\ufee5', '\ufee6', '\ufee7', '\ufee8'),
-    'ه': ('\ufee9', '\ufeea', '\ufeeb', '\ufeec'), 'و': ('\ufeed', '\ufeee', None, None),
-    'ى': ('\ufeef', '\ufef0', None, None), 'ي': ('\ufef1', '\ufef2', '\ufef3', '\ufef4'),
-}
-_AR_DUAL = set("بتثجحخسشصضطظعغفقكلمنهيئ")
-_AR_LAMALEF = {'آ': ('\ufef5', '\ufef6'), 'أ': ('\ufef7', '\ufef8'),
-               'إ': ('\ufef9', '\ufefa'), 'ا': ('\ufefb', '\ufefc')}
-
-
-def _ar_shape(word):
-    out = []
-    i, n = 0, len(word)
-    while i < n:
-        c = word[i]
-        if c == 'ل' and i + 1 < n and word[i + 1] in _AR_LAMALEF:
-            iso, fin = _AR_LAMALEF[word[i + 1]]
-            joined = i > 0 and word[i - 1] in _AR_DUAL
-            out.append(fin if joined else iso)
-            i += 2
-            continue
-        if c not in _AR_FORMS:
-            out.append(c)
-            i += 1
-            continue
-        iso, fin, ini, med = _AR_FORMS[c]
-        prev_j = i > 0 and word[i - 1] in _AR_DUAL and c != 'ء'
-        next_j = c in _AR_DUAL and i < n - 1 and word[i + 1] in _AR_FORMS and word[i + 1] != 'ء'
-        if prev_j and next_j and med:
-            form = med
-        elif prev_j and fin:
-            form = fin
-        elif next_j and ini:
-            form = ini
-        else:
-            form = iso
-        out.append(form)
-        i += 1
-    return "".join(out)
-
-
-_AR_LTR = re.compile(r"([A-Za-z0-9%./:+\-]+)")
-_AR_MIRROR = str.maketrans("()[]{}<>", ")(][}{><")
-
-
-def ar_display(s):
-    """يحوّل نصاً عربياً (أو مختلطاً) إلى شكل يُعرض صحيحاً في pygame."""
-    if not any(c in _AR_FORMS for c in s):
-        return s
-    parts = _AR_LTR.split(s)
-    out = []
-    for idx, part in enumerate(parts):
-        if not part:
-            continue
-        if idx % 2 == 1:
-            out.append(part)
-        else:
-            out.append(_ar_shape(part)[::-1].translate(_AR_MIRROR))
-    return "".join(reversed(out))
-
-
-AR_EXACT = {
-    "STARFALL": "ستارفول", "GALAXY ATTACK": "هجوم المجرة",
-    "THE LAST FLEET  -  YEAR 2500": "آخر الأساطيل  -  عام 2500",
-    "CONTINUE": "متابعة", "START": "ابدأ", "BOSS": "زعيم", "MODE": "الوضع",
-    "1 PLAYER": "لاعب واحد", "2 PLAYERS": "لاعبان", "SHOP": "المتجر", "RECHARGE": "الشحن",
-    "STARFALL PASS": "تذكرة ستارفول", "DAILY REWARD": "المكافأة اليومية", "READY!": "جاهزة!",
-    "CLAIMED": "تم الاستلام", "SETTINGS": "الإعدادات", "NEW GAME": "لعبة جديدة", "QUIT": "خروج",
-    "PROGRESS IS SAVED AUTOMATICALLY": "التقدم يُحفظ تلقائياً",
-    "TAP LEFT / RIGHT SIDE OF THE LEVEL ROW TO CHANGE LEVEL": "اضغط يمين أو يسار صف المرحلة لتغييرها",
-    "TAP AGAIN TO ERASE!": "اضغط مرة أخرى للمسح!", "PRESS AGAIN TO ERASE!": "اضغط مرة أخرى للمسح!",
-    "SOUND EFFECTS": "المؤثرات الصوتية", "MUSIC": "الموسيقى", "DIFFICULTY": "الصعوبة",
-    "SCREEN SHAKE": "اهتزاز الشاشة", "GLOW EFFECT (BLOOM)": "تأثير التوهج", "SCANLINES": "خطوط المسح",
-    "AUTO FIRE": "إطلاق تلقائي", "KEY: SHIELD": "زر الدرع", "KEY: SPECIAL": "زر الخاصة",
-    "KEY: SWITCH WEAPON": "زر تغيير السلاح", "KEY: PAUSE": "زر الإيقاف", "KEY: USE BOMB": "زر القنبلة",
-    "FULLSCREEN (F11)": "ملء الشاشة (F11)", "BACK": "رجوع", "LANGUAGE": "اللغة",
-    "ON": "تشغيل", "OFF": "إيقاف", "OFF (HOLD SPACE / ENTER)": "إيقاف (اضغط المسافة / Enter)",
-    "PRESS A KEY...": "اضغط زراً...", "ENGLISH": "English", "ARABIC": "العربية",
-    "< EASY >": "< سهل >", "< NORMAL >": "< عادي >", "< HARD >": "< صعب >",
-    "TAP LEFT / RIGHT HALF OF A ROW TO CHANGE": "اضغط النصف الأيمن أو الأيسر من الصف للتغيير",
-    "STARFALL SHOP": "متجر ستارفول", "[R] RECHARGE CRYSTALS": "[R] شحن الكريستال",
-    "WEAPONS": "الأسلحة", "SHIPS": "السفن", "UPGRADES": "الترقيات", "EXTRAS": "إضافات",
-    "PREMIUM": "مميز", "STYLE": "المظهر", "BUNDLES": "الحزم", "CHARGE": "الشحن",
-    "TAP A CARD TO SELECT - TAP AGAIN TO BUY - DRAG TO SCROLL": "اضغط البطاقة للاختيار - واضغطها مرة ثانية للشراء - اسحب للتمرير",
-    "ARROWS: SELECT   Q / E / TAB: PAGE   ENTER or 1-9: BUY   R: RECHARGE   ESC or B: BACK":
-        "الأسهم: اختيار   Q / E: الصفحة   Enter أو 1-9: شراء   R: شحن   ESC أو B: رجوع",
-    "NOT ENOUGH COINS": "عملات غير كافية", "NOT ENOUGH CRYSTALS - OPEN THE CHARGE TAB": "كريستال غير كافٍ - افتح تبويب الشحن",
-    "PURCHASED!": "تم الشراء!", "EQUIPPED": "مُجهّز", "ALREADY OWNED": "مملوك مسبقاً",
-    "ALREADY AT MAX": "وصل للحد الأقصى", "OWNED": "مملوك", "MAX LEVEL": "الحد الأقصى", "MAX": "الحد الأقصى",
-    "COME BACK TOMORROW": "عُد غداً", "ACTIVE": "مفعّل", "ENTER CODE": "أدخل الكود",
-    "LOADING AD...": "جارٍ تحميل الإعلان...", "TRAIL REMOVED": "تمت إزالة الأثر",
-    "STORE  -  RECHARGE": "المتجر - الشحن", "REDEEM CODE": "استبدل الكود",
-    "After buying a code, type it below and tap REDEEM": "بعد شراء الكود اكتبه بالأسفل واضغط استبدال",
-    "Crystals come from purchases/codes or confirmed rewarded ads.": "الكريستال يأتي من الشراء أو الأكواد أو الإعلانات المكافأة",
-    "WATCH AD: DOUBLE COINS": "شاهد الإعلان: ضاعف العملات", "REWARD ALREADY DOUBLED": "تمت مضاعفة المكافأة",
-    "WATCH AD: CONTINUE": "شاهد الإعلان: متابعة", "CONTINUE AD USED": "استُخدم إعلان المتابعة",
-    "AD IN PROGRESS...": "الإعلان قيد التشغيل...", "RETRY LEVEL": "أعد المرحلة",
-    "NEXT LEVEL": "المرحلة التالية", "MAIN MENU": "القائمة الرئيسية",
-    "DAILY ADS USED - COME BACK TOMORROW": "انتهت إعلانات اليوم - عُد غداً",
-    "PREMIUM TRACK: UNLOCKED": "المسار المميز: مفتوح",
-    "PREMIUM TRACK LOCKED  -  unlock in SHOP > CHARGE": "المسار المميز مقفل - افتحه من المتجر",
-    "FREE:    ": "مجاني:    ", "PREMIUM: ": "مميز: ", "LOCKED": "مقفل", "CLAIM ALL": "استلام الكل",
-    "GET PREMIUM": "احصل على المميز", "UP": "أعلى", "DOWN": "أسفل", "CLAIM TODAY": "استلام اليوم",
-    "NOTHING TO CLAIM": "لا شيء للاستلام", "TYPE YOUR CODE FIRST": "اكتب الكود أولاً",
-    "VIP BONUS: +25 CRYSTALS EVERY DAY": "مكافأة VIP: +25 كريستال يومياً",
-    "Tip: VIP members get +25 crystals every day and +50% coins": "نصيحة: أعضاء VIP يحصلون على 25 كريستال يومياً و50% عملات أكثر",
-    "PAUSED": "متوقف", "RESUME": "استمرار", "MENU": "القائمة",
-    "PROGRESS SAVED": "تم حفظ التقدم", "GAME OVER": "انتهت اللعبة", "YOU WIN!": "فزت!",
-    "THE GALAXY IS SAFE": "المجرة في أمان", "YOUR COINS AND UPGRADES ARE KEPT": "عملاتك وترقياتك محفوظة",
-    "COINS DOUBLED!": "تمت مضاعفة العملات!", "AD WAS NOT COMPLETED - NO REWARD": "لم يكتمل الإعلان - لا مكافأة",
-    "REWARDED ADS ARE NOT CONNECTED YET": "إعلانات المكافأة غير متصلة بعد",
-    "DAILY AD LIMIT REACHED": "وصلت للحد اليومي للإعلانات",
-    "SECTOR CLEAR": "تم تطهير القطاع", "WARNING": "تحذير", "REVIVED!": "عودة!",
-    "+HEALTH": "+صحة", "SHIELD": "الدرع", "+SPECIAL": "+خاصة", "DOUBLE DAMAGE": "ضرر مضاعف",
-    "RAPID FIRE": "إطلاق سريع", "EXTRA SHOTS": "طلقات إضافية", "MAGNET": "مغناطيس", "BOMB!": "قنبلة!",
-    "P / ESC / ENTER: RESUME": "P / ESC / Enter: استمرار",
-    "B: SHOP    O: SETTINGS    M: MAIN MENU (SAVES)": "B: المتجر    O: الإعدادات    M: القائمة",
-    "ENTER: NEXT LEVEL     B: SHOP     M: MENU": "Enter: المرحلة التالية    B: المتجر    M: القائمة",
-    "R / ENTER: RETRY THIS LEVEL     B: SHOP     M: MENU": "R / Enter: أعد المرحلة    B: المتجر    M: القائمة",
-    "ENTER: MAIN MENU": "Enter: القائمة الرئيسية",
-    "COINS": "العملات", "CRYSTALS": "الكريستال", "PROGRESS": "التقدم",
-    "WEAPON": "السلاح", "SHIP": "المركبة", "SCORE": "النتيجة", "BOMB": "قنبلة",
-    "SPD": "السرعة", "DMG": "الضرر", "HP": "الصحة",
-    # أسماء عناصر المتجر
-    "SPREAD SHOT": "طلقات منتشرة", "RAPID FIRE ": "إطلاق سريع", "TWIN BLASTER": "بندقية مزدوجة",
-    "PLASMA CANNON": "مدفع البلازما", "HOMING MISSILES": "صواريخ موجهة", "FLAK CANNON": "مدفع الشظايا",
-    "TESLA COIL": "ملف تسلا", "INFERNO": "الجحيم", "CRYO CANNON": "مدفع التجميد",
-    "BUZZ RIPPER": "منشار الطنين", "SWARM MISSILES": "أسراب الصواريخ", "ION LANCE": "رمح الأيونات",
-    "WEAPON POWER": "قوة السلاح", "FIRE RATE": "سرعة الإطلاق",
-    "VANGUARD": "الطليعة", "FALCON": "الصقر", "TITAN": "العملاق", "PHANTOM": "الشبح",
-    "VIPER": "الأفعى", "HULL ARMOR": "درع الهيكل", "SPECIAL BAY": "حجرة الخاصة",
-    "SHIELD CELL": "خلية الدرع", "ENGINE BOOST": "تعزيز المحرك", "SHIELD REGEN": "تجدد الدرع",
-    "COIN BONUS": "مكافأة العملات", "LUCKY DROPS": "حظ الجوائز", "SPECIAL POWER": "قوة الخاصة",
-    "LOOT MAGNET": "مغناطيس الغنائم", "CRIT CHANCE": "فرصة الضربة القاضية", "BOSS SLAYER": "قاتل الزعماء",
-    "PASS BOOST": "دعم التذكرة", "WINGMAN DRONE": "طائرة مرافقة", "REVIVE TOKEN": "رمز الإحياء",
-    "FULL REPAIR": "إصلاح كامل", "NOVA PRIME": "نوفا برايم", "ECLIPSE": "الكسوف", "SERAPH": "السيرافيم",
-    "PHOTON BURST": "انفجار الفوتون", "SINGULARITY": "التفرد", "RAILGUN": "مدفع السكة",
-    "NOVA RING": "حلقة نوفا", "DOUBLE COINS": "عملات مضاعفة", "DRONE UPGRADE": "ترقية الطائرة",
-    "AEGIS CORE": "نواة إيجيس", "REVIVE PACK": "حزمة الإحياء", "BOMB PACK": "حزمة القنابل",
-    "CLASSIC PAINT": "الطلاء الكلاسيكي", "ICE WING": "جناح الجليد", "CRIMSON": "القرمزي",
-    "STEALTH": "التخفي", "NEON RUSH": "اندفاع النيون", "MAGMA": "الحمم", "GOLDEN ARMOR": "درع ذهبي",
-    "AURORA": "الشفق القطبي", "VOID WALKER": "سائر الفراغ", "SAKURA": "ساكورا", "ROYAL GUARD": "الحرس الملكي",
-    "PINK TRAIL": "أثر وردي", "TOXIC TRAIL": "أثر سام", "FIRE TRAIL": "أثر ناري",
-    "RAINBOW TRAIL": "أثر قوس قزح", "GOLD TRAIL": "أثر ذهبي", "GALAXY TRAIL": "أثر المجرة",
-    "COIN POUCH": "كيس العملات", "COIN CHEST": "صندوق العملات", "COIN VAULT": "خزنة العملات",
-    "COIN TREASURY": "خزينة الكنز", "WARRIOR PACK": "حزمة المحارب", "DEFENDER PACK": "حزمة المدافع",
-    "COLLECTOR PACK": "حزمة الجامع", "ACE PACK": "حزمة الطيار الماهر", "ARSENAL PACK": "حزمة الترسانة",
-    "STYLE PACK": "حزمة الأناقة", "PASS UNLOCK": "فتح التذكرة", "ULTIMATE PACK": "الحزمة الأسطورية",
-    "REDEEM CODE ": "استبدال كود", "WATCH AD ": "شاهد الإعلان", "100 CRYSTALS": "100 كريستال",
-    "300 CRYSTALS": "300 كريستال", "700 CRYSTALS": "700 كريستال", "1500 CRYSTALS": "1500 كريستال",
-    "4000 CRYSTALS": "4000 كريستال", "10000 CRYSTALS": "10000 كريستال", "STARTER PACK": "حزمة البداية",
-    "VIP 30 DAYS": "VIP لمدة 30 يوماً", "MEGA PACK": "الحزمة الكبرى", "BOMB ": "قنبلة",
-    "WATCH AD": "شاهد الإعلان", "Free crystals!": "كريستال مجاني!", "Type a recharge code": "اكتب كود الشحن",
-}
-
-AR_PATTERNS = [
-    (r"< LEVEL (\d+) > BOSS", "< المرحلة {0} > زعيم"),
-    (r"< LEVEL (\d+) >", "< المرحلة {0} >"),
-    (r"REACHED LEVEL (\d+) / (\d+)\s+HIGH SCORE (\d+)", "وصلت المرحلة {0} / {1}    أعلى نتيجة {2}"),
-    (r"LEVEL (\d+) / (\d+)", "المرحلة {0} / {1}"),
-    (r"LEVEL (\d+) CLEAR!", "اكتملت المرحلة {0}!"),
-    (r"LEVEL (\d+)", "المرحلة {0}"),
-    (r"NEXT: LEVEL (\d+)  \(BOSS!\)", "المرحلة التالية {0}  (زعيم!)"),
-    (r"NEXT: LEVEL (\d+)", "المرحلة التالية {0}"),
-    (r"COINS EARNED: (\d+)", "العملات المكتسبة: {0}"),
-    (r"TOTAL COINS: (\d+)", "إجمالي العملات: {0}"),
-    (r"YOU REACHED LEVEL (\d+)", "وصلت للمرحلة {0}"),
-    (r"HIGH SCORE: (\d+)", "أعلى نتيجة: {0}"),
-    (r"HIGH SCORE (\d+)", "أعلى نتيجة {0}"),
-    (r"FINAL SCORE: (\d+)", "النتيجة النهائية: {0}"),
-    (r"ALL (\d+) LEVELS COMPLETED", "أكملت كل المراحل ({0})"),
-    (r"SCORE: (\d+)", "النتيجة: {0}"),
-    (r"SCORE (\d+)", "النتيجة {0}"),
-    (r"COINS (\d+)", "العملات {0}"),
-    (r"CRYSTALS (\d+)", "الكريستال {0}"),
-    (r"BALANCE: (\d+)", "الرصيد: {0}"),
-    (r"WEAPON: (.+) LV (\d+)\s+SHIP: (.+)", "السلاح: {0}  المستوى {1}    المركبة: {2}"),
-    (r"(.+) LV (\d+)", "{0} المستوى {1}"),
-    (r"WAVE (\d+) / 5", "الموجة {0} / 5"),
-    (r"WAVE (\d+)", "الموجة {0}"),
-    (r"BOSS (\d+) APPROACHING", "الزعيم {0} يقترب"),
-    (r"COMBO x(\d+)", "تتابع x{0}"),
-    (r"ABILITY: (.+)", "القدرة: {0}"),
-    (r"(.+)  \(BOSS (\d+)\)", "{0}  (زعيم {1})"),
-    (r"\[(.+)\] WEAPON  \[B\] SHOP", "[{0}] السلاح  [B] المتجر"),
-    (r"\[(.+)\] BOMB x(\d+)   REVIVE x(\d+)", "[{0}] قنبلة {1}   إحياء {2}"),
-    (r"TIER (\d+) / (\d+)      XP (\d+)", "المستوى {0} / {1}      الخبرة {2}"),
-    (r"TIER (\d+) / (\d+)", "المستوى {0} / {1}"),
-    (r"TIER (\d+)", "المستوى {0}"),
-    (r"DAY (\d+)", "اليوم {0}"),
-    (r"HEALTH (\d+) / (\d+)", "الصحة {0} / {1}"),
-    (r"ENERGY (\d+) / (\d+)", "الطاقة {0} / {1}"),
-    (r"CAPACITY (\d+) / (\d+)", "السعة {0} / {1}"),
-    (r"DRONES (\d+) / (\d+)", "الطائرات {0} / {1}"),
-    (r"OWNED (\d+) / (\d+)", "مملوك {0} / {1}"),
-    (r"AEGIS (\d+) / (\d+)", "الدرع الواقي {0} / {1}"),
-    (r"TODAY (\d+) / (\d+)", "اليوم {0} / {1}"),
-    (r"CLAIMED (\d+) REWARDS", "تم استلام {0} مكافآت"),
-    (r"VIP ACTIVE - (\d+) DAYS LEFT", "VIP فعّال - متبقي {0} يوم"),
-    (r"MORE ITEMS  (\d+)/(\d+)", "المزيد {0}/{1}"),
-    (r"WATCH AD: \+(\d+) CRYSTALS \((\d+) LEFT TODAY\)", "شاهد الإعلان: +{0} كريستال ({1} متبقية اليوم)"),
-    (r"\+(\d+) NOVA CRYSTALS ADDED!", "تمت إضافة {0} كريستال!"),
-    (r"\+(\d+) CRYSTALS!", "+{0} كريستال!"),
-    (r"\+(\d+)", "+{0}"),
-    (r"\(BOSS (\d+)\)", "(زعيم {0})"),
-]
-_AR_PAT = [(re.compile(p), t) for p, t in AR_PATTERNS]
-_UI_CACHE = {}
-
-
-def ui_text(s):
-    """يترجم النص للعربية عند تفعيل اللغة العربية، ثم يشكّله للعرض."""
-    if save.get("lang") != "ar" or not s:
-        return s
-    if s in _UI_CACHE:
-        return _UI_CACHE[s]
-    out = AR_EXACT.get(s)
-    if out is None:
-        for pat, tpl in _AR_PAT:
-            m = pat.fullmatch(s)
-            if m:
-                out = tpl.format(*m.groups())
-                break
-    if out is None:
-        out = s
-    out = ar_display(out)
-    if len(_UI_CACHE) < 4000:
-        _UI_CACHE[s] = out
-    return out
-
-
-def text(s, font, col, x, y, center=False, right=False, shadow=True):
-    s = ui_text(s)
+def text(s, font, col, x, y, center=False, right=False, shadow=True, maxw=None):
     img = font.render(s, True, col)
+    sh = font.render(s, True, (0, 0, 0)) if shadow else None
+    cwid = canvas.get_width()
+    if center:
+        avail = 2 * min(x, cwid - x) - 12
+    elif right:
+        avail = x - 8
+    else:
+        avail = cwid - x - 8
+    if maxw:
+        avail = min(avail, maxw)
+    if avail > 20 and img.get_width() > avail:
+        k = avail / float(img.get_width())
+        nw, nh = max(1, int(img.get_width() * k)), max(1, int(img.get_height() * k))
+        img = pygame.transform.smoothscale(img, (nw, nh))
+        if sh is not None:
+            sh = pygame.transform.smoothscale(sh, (nw, nh))
     if center:
         x -= img.get_width() // 2
         y -= img.get_height() // 2
     elif right:
         x -= img.get_width()
-    if shadow:
-        canvas.blit(font.render(s, True, (0, 0, 0)), (int(x) + 2, int(y) + 2))
+    if sh is not None:
+        canvas.blit(sh, (int(x) + 2, int(y) + 2))
     canvas.blit(img, (int(x), int(y)))
 
 
@@ -4642,7 +4389,7 @@ U = SimpleNamespace(state="menu", sel=dict(menu=0, shop=0, settings=0, recharge=
                     reward_doubled=False, recharge_ad_rect=None, redeem_rect=None, code_rect=None,
                     scroll=0, scroll_rects=[], btns=[], ad_test=None)
 MENU_ROWS = ["play", "mode", "shop", "recharge", "pass", "daily", "settings", "new", "quit"]
-SET_ROWS = ["lang", "sfx", "music", "difficulty", "shake", "bloom", "scan", "autofire", "b_shield", "b_special",
+SET_ROWS = ["sfx", "music", "difficulty", "shake", "bloom", "scan", "autofire", "b_shield", "b_special",
             "b_weapon", "b_pause", "b_bomb", "fullscreen", "back"]
 DIFF_NAMES = ["EASY", "NORMAL", "HARD"]
 TOUCH_BACK_RECT = pygame.Rect(UIW - 150, HEIGHT - 58, 130, 42)
@@ -4748,7 +4495,7 @@ def draw_menu():
     canvas.blit(MENU_BOSS, MENU_BOSS.get_rect(center=(UIW - 130, int(470 + math.sin(t * 1.6) * 8))))
     U.rects = []
     for i, row in enumerate(MENU_ROWS):
-        r = pygame.Rect(UIW // 2 - 230, 222 + i * 38, 460, 34)
+        r = pygame.Rect(UIW // 2 - 230, 212 + i * 40, 460, 36)
         U.rects.append((r, i))
         if row == "play":
             ml = U.menu_level
@@ -4786,8 +4533,6 @@ def draw_menu():
 
 
 def setting_value(row):
-    if row == "lang":
-        return "English" if save["lang"] == "ar" else "العربية"
     if row == "sfx":
         return "< %d / 10 >" % save["sfx"]
     if row == "music":
@@ -4807,18 +4552,14 @@ def setting_value(row):
     return None
 
 
-SET_LABELS = dict(lang="LANGUAGE", sfx="SOUND EFFECTS", music="MUSIC", difficulty="DIFFICULTY", shake="SCREEN SHAKE",
+SET_LABELS = dict(sfx="SOUND EFFECTS", music="MUSIC", difficulty="DIFFICULTY", shake="SCREEN SHAKE",
                   bloom="GLOW EFFECT (BLOOM)", scan="SCANLINES",
                   autofire="AUTO FIRE", b_shield="KEY: SHIELD", b_special="KEY: SPECIAL",
                   b_weapon="KEY: SWITCH WEAPON", b_pause="KEY: PAUSE", b_bomb="KEY: USE BOMB", fullscreen="FULLSCREEN (F11)", back="BACK")
 
 
 def change_setting(row, d):
-    if row == "lang":
-        save["lang"] = "ar" if save["lang"] == "en" else "en"
-        _UI_CACHE.clear()
-        sfx("click")
-    elif row == "sfx":
+    if row == "sfx":
         save["sfx"] = clamp(save["sfx"] + d, 0, 10)
         apply_volumes()
         sfx("coin")
@@ -4849,11 +4590,11 @@ def draw_settings():
     text("SETTINGS", F_XL, GOLD, UIW // 2, 54, center=True)
     U.rects = []
     for i, row in enumerate(SET_ROWS):
-        r = pygame.Rect(UIW // 2 - 300, 100 + i * 36, 600, 32)
+        r = pygame.Rect(UIW // 2 - 300, 92 + i * 37, 600, 36)
         U.rects.append((r, i))
         draw_row(r, U.sel["settings"] == i, SET_LABELS[row], setting_value(row))
     hint = "TAP LEFT / RIGHT HALF OF A ROW TO CHANGE" if ANDROID else "LEFT / RIGHT TO CHANGE   ENTER TO SELECT   ESC TO GO BACK"
-    text(hint, F_S, GRAY_L, UIW // 2, 672, center=True)
+    text(hint, F_S, GRAY_L, UIW // 2, 668, center=True)
 
 
 def move_shop_sel(d):
@@ -4925,10 +4666,10 @@ def draw_shop():
         canvas.blit(get_icon(shop_icon_kind(kind), icon_size), (icon_x, icon_y))
         pygame.draw.line(canvas, accent, (cx + 98, cy + 12), (cx + 98, cy + ch - 12), 1)
         text("%d" % (n + 1), F_S, GRAY_L, cx + 10, cy + 8)
-        text(name, F_M, GOLD_LIGHT if sel else WHITE, cx + 110, cy + 14)
-        text(desc, F_S, GRAY_L, cx + 110, cy + 42)
+        text(name, F_M, GOLD_LIGHT if sel else WHITE, cx + 110, cy + 14, maxw=cw - 118)
+        text(desc, F_S, GRAY_L, cx + 110, cy + 42, maxw=cw - 118)
         if line:
-            text(line, F_S, CYAN, cx + 110, cy + 62)
+            text(line, F_S, CYAN, cx + 110, cy + 62, maxw=cw - 118)
         if price is not None:
             if isinstance(price, str):
                 text(price, F_M, GREEN if cur == "ad" else GOLD, cx + 110, cy + 96)
@@ -4992,8 +4733,8 @@ def draw_recharge():
         sel = U.sel["recharge"] == i
         panel(r.x, r.y, r.w, r.h, GOLD if sel else (190, 120, 255))
         canvas.blit(get_icon("crystal" if "crystals" in sku else "pass" if "pass" in sku else "bundle", 38), (r.x + 8, r.y + 7))
-        text(name, F_M, GOLD_LIGHT if sel else WHITE, r.x + 56, r.y + 6)
-        text(reward_text(gr)[:34], F_S, GRAY_L, r.x + 56, r.y + 30)
+        text(name, F_M, GOLD_LIGHT if sel else WHITE, r.x + 56, r.y + 6, maxw=300)
+        text(reward_text(gr)[:34], F_S, GRAY_L, r.x + 56, r.y + 30, maxw=300)
         text(price, F_M, GOLD, r.right - 12, r.y + 14, right=True)
     U.recharge_ad_rect = pygame.Rect(230, 412, 440, 42)
     left = AD_DAILY_MAX - ad_used_today()
@@ -5228,7 +4969,7 @@ def menu_activate():
     elif row == "new":
         if U.confirm:
             # يحتفظ بكل ما اشتراه اللاعب بمال حقيقي (كريستال، VIP، تذكرة، أكواد مستعملة)
-            keep = {k: save[k] for k in ("high_score", "lang", "sfx", "music", "difficulty", "shake", "autofire",
+            keep = {k: save[k] for k in ("high_score", "sfx", "music", "difficulty", "shake", "autofire",
                                          "two_players", "binds", "crystals", "used_codes", "purchases",
                                          "vip_until", "pass_prem", "ad_date", "ad_count")}
             save.clear()
