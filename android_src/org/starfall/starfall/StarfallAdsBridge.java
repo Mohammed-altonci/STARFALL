@@ -2,6 +2,7 @@
 package org.starfall.starfall;
 
 import android.app.Activity;
+
 import com.google.android.gms.ads.AdError;
 import com.google.android.gms.ads.AdRequest;
 import com.google.android.gms.ads.FullScreenContentCallback;
@@ -12,74 +13,94 @@ import com.google.android.gms.ads.rewarded.RewardedAdLoadCallback;
 
 public class StarfallAdsBridge {
 
-    private static final String TEST_AD_UNIT =
-        "ca-app-pub-3940256099942544/5224354917";
+    private static final String CONTINUE_AD =
+        "ca-app-pub-3170795820395582/3092497265";
 
-    private static RewardedAd rewardedAd;
-    private static boolean isLoading = false;
+    private static final String DOUBLE_REWARD_AD =
+        "ca-app-pub-3170795820395582/8017200087";
+
+    private static final String CRYSTALS_AD =
+        "ca-app-pub-3170795820395582/1615764066";
+
     private static boolean isInitialized = false;
-
-    private static RewardCallback pendingCallback;
-    private static Activity pendingActivity;
+    private static boolean isLoading = false;
 
     public static void showRewardedAd(
             Activity activity,
             String placement,
             RewardCallback callback) {
 
+        if (activity == null) {
+            notifyResult(callback, false);
+            return;
+        }
+
         activity.runOnUiThread(() -> {
-            if (rewardedAd != null) {
-                showLoadedAd(activity, callback);
+
+            String adUnit = getAdUnit(placement);
+
+            if (adUnit == null || isLoading) {
+                notifyResult(callback, false);
                 return;
             }
 
-            pendingCallback = callback;
-            pendingActivity = activity;
+            isLoading = true;
 
             if (!isInitialized) {
-                isInitialized = true;
+
                 MobileAds.initialize(activity, status -> {
-                    loadRewardedAd(activity);
+                    isInitialized = true;
+                    loadRewardedAd(activity, adUnit, callback);
                 });
-            } else if (!isLoading) {
-                loadRewardedAd(activity);
+
+            } else {
+
+                loadRewardedAd(activity, adUnit, callback);
             }
         });
     }
 
-    private static void loadRewardedAd(Activity activity) {
-        if (isLoading) return;
+    private static String getAdUnit(String placement) {
 
-        isLoading = true;
+        if ("continue_after_defeat".equals(placement)) {
+            return CONTINUE_AD;
+        }
+
+        if ("double_level_coins".equals(placement)) {
+            return DOUBLE_REWARD_AD;
+        }
+
+        if ("crystal_reward".equals(placement)) {
+            return CRYSTALS_AD;
+        }
+
+        return null;
+    }
+
+    private static void loadRewardedAd(
+            Activity activity,
+            String adUnit,
+            RewardCallback callback) {
 
         AdRequest request = new AdRequest.Builder().build();
 
         RewardedAd.load(
             activity,
-            TEST_AD_UNIT,
+            adUnit,
             request,
             new RewardedAdLoadCallback() {
 
                 @Override
                 public void onAdLoaded(RewardedAd ad) {
-                    isLoading = false;
-                    rewardedAd = ad;
 
-                    if (pendingCallback != null &&
-                        pendingActivity != null) {
-
-                        showLoadedAd(
-                            pendingActivity,
-                            pendingCallback
-                        );
-                    }
+                    showLoadedAd(activity, ad, callback);
                 }
 
                 @Override
                 public void onAdFailedToLoad(LoadAdError error) {
+
                     isLoading = false;
-                    rewardedAd = null;
-                    finishCallback(false);
+                    notifyResult(callback, false);
                 }
             }
         );
@@ -87,50 +108,60 @@ public class StarfallAdsBridge {
 
     private static void showLoadedAd(
             Activity activity,
+            RewardedAd ad,
             RewardCallback callback) {
 
-        RewardedAd ad = rewardedAd;
-        rewardedAd = null;
-
-        if (ad == null) {
-            if (callback != null) callback.onRewarded(false);
-            return;
-        }
-
         final boolean[] earned = {false};
+        final boolean[] completed = {false};
 
         ad.setFullScreenContentCallback(
             new FullScreenContentCallback() {
 
                 @Override
                 public void onAdDismissedFullScreenContent() {
-                    callback.onRewarded(earned[0]);
-                    loadRewardedAd(activity);
+
+                    if (!completed[0]) {
+                        completed[0] = true;
+                        isLoading = false;
+                        notifyResult(callback, earned[0]);
+                    }
                 }
 
                 @Override
                 public void onAdFailedToShowFullScreenContent(
                         AdError error) {
-                    callback.onRewarded(false);
-                    loadRewardedAd(activity);
+
+                    if (!completed[0]) {
+                        completed[0] = true;
+                        isLoading = false;
+                        notifyResult(callback, false);
+                    }
                 }
             }
         );
 
-        ad.show(activity, rewardItem -> {
-            earned[0] = true;
-        });
-        
-        pendingCallback = null;
-        pendingActivity = null;
+        try {
+
+            ad.show(activity, rewardItem -> {
+                earned[0] = true;
+            });
+
+        } catch (Exception error) {
+
+            if (!completed[0]) {
+                completed[0] = true;
+                isLoading = false;
+                notifyResult(callback, false);
+            }
+        }
     }
 
-    private static void finishCallback(boolean earned) {
-        if (pendingCallback != null) {
-            pendingCallback.onRewarded(earned);
-        }
+    private static void notifyResult(
+            RewardCallback callback,
+            boolean earned) {
 
-        pendingCallback = null;
-        pendingActivity = null;
+        if (callback != null) {
+            callback.onRewarded(earned);
+        }
     }
 }
