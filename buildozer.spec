@@ -20,7 +20,7 @@ android.accept_sdk_license = True
 android.add_src = ./android_src
 android.gradle_dependencies = com.google.android.gms:play-services-ads:25.5.0
 android.enable_androidx = True
-android.meta_data = com.google.android.gms.ads.APPLICATION_ID=ca-app-pub-3940256099942544~3347511713
+android.meta_data = com.google.android.gms.ads.APPLICATION_ID=ca-app-pub-3170795820395582~9386442870
 
 [buildozer]
 log_level = 2
